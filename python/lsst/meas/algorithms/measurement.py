@@ -69,7 +69,7 @@ class SourceSlotConfig(pexConfig.Config):
 class ClassificationConfig(pexConfig.Config):
     fac1 = pexConfig.RangeField(
         doc="First S/G parameter; critical ratio of model to psf flux",
-        dtype=float, default=0.925, min=0.0
+        dtype=float, default=(1.0 / 1.015), min=0.0
         )
     fac2 = pexConfig.RangeField(
         doc="Second S/G parameter; correction for modelFlux error",
