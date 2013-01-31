@@ -54,6 +54,9 @@ public:
     typedef MeasureSourcesBuilder Builder;
     typedef std::list<CONST_PTR(Algorithm)> AlgorithmList;
 
+    /// @brief Whether we're expecting to run in forced mode (i.e. with references).
+    bool isForced() const { return _isForced; }
+
     /**
      *  @brief Return the list of algorithms.
      *
@@ -78,8 +81,8 @@ public:
     /**
      *  @brief Apply the registered algorithms to the given source.
      *
-     *  This overload passes a user-defined center to the algorithms.  If refineCenter is true
-     *  and setCentroider has been called, that algorithm will be used to refine the centroid.
+     *  This overload passes a user-defined center to the algorithms.  If refineCenter==true and
+     *  setCentroider has been called, that algorithm will be used to refine the centroid.
      */
     template <typename PixelT>
     void apply(
@@ -92,41 +95,47 @@ public:
     /**
      *  @brief Apply the registered algorithms to the given source.
      *
-     *  This overload uses the peak position as the center for the algorithms; if setCentroider
-     *  has been called, that algorithm will refine the centroid.
+     *  This overload uses the peak position as the center for the algorithms.
+     *  If refineCenter==true and setCentroider has been called, that algorithm will be used
+     *  to refine the centroid.
      */
     template <typename PixelT>
-    void apply(
+    void applyWithPeak(
         afw::table::SourceRecord & source,
-        afw::image::Exposure<PixelT> const & exposure
+        afw::image::Exposure<PixelT> const & exposure,
+        bool refineCenter=true
     ) const;
 
     /**
      *  @brief Apply the registered algorithms to the given source.
      *
-     *  This version of apply() uses the sky coordinates as the center for the algorithms;
-     *  no refinement of the centroid is made.
+     *  This version of apply() uses the sky coordinates as the center for the algorithms.
+     *  If refineCenter==true and setCentroider has been called, that algorithm will be used
+     *  to refine the centroid.
      */
     template <typename PixelT>
     void applyWithCoord(
         afw::table::SourceRecord & source,
-        afw::image::Exposure<PixelT> const & exposure
+        afw::image::Exposure<PixelT> const & exposure,
+        bool refineCenter=false
     ) const {
-        apply(source, exposure, exposure.getWcs()->skyToPixel(source.getCoord()), false);
+        apply(source, exposure, exposure.getWcs()->skyToPixel(source.getCoord()), refineCenter);
     }
 
     /**
      *  @brief Apply the registered algorithms to the given source.
      *
-     *  This version of apply() uses a previous centroid as the center for the algorithms;
-     *  no refinement of the centroid is made.
+     *  This version of apply() uses the centroid slot as the center for the algorithms.
+     *  If refineCenter==true and setCentroider has been called, that algorithm will be used
+     *  to refine the centroid.
      */
     template <typename PixelT>
     void applyWithPixel(
         afw::table::SourceRecord & source,
-        afw::image::Exposure<PixelT> const & exposure
+        afw::image::Exposure<PixelT> const & exposure,
+        bool refineCenter=false
     ) const {
-        apply(source, exposure, afw::geom::Point2D(source.getX(), source.getY()), false);
+        apply(source, exposure, source.getCentroid(), refineCenter);
     }
 
     /**
@@ -134,14 +143,19 @@ public:
      *
      *  This overload uses a reference Source to provide the center and footprint.  This is
      *  intended for forced photometry (measuring a Source on one image based on its detection
-     *  in another).
+     *  in another).  The MeasureSourcesBuilder that created this object must have been
+     *  initialized with isForced=true.
+     *
+     *  If refineCenter==true and setCentroider has been called, that algorithm will be used
+     *  to refine the centroid.
      */
     template <typename PixelT>
-    void apply(
+    void applyForced(
         afw::table::SourceRecord & source,
         afw::image::Exposure<PixelT> const & exposure,
         afw::table::SourceRecord const& reference,
-        CONST_PTR(afw::image::Wcs) referenceWcs = CONST_PTR(afw::image::Wcs)()
+        CONST_PTR(afw::image::Wcs) referenceWcs = CONST_PTR(afw::image::Wcs)(),
+        bool refineCenter=false
     ) const;
 
     ~MeasureSources(); // needs to be defined in .cc file because of forward-declare impl class
@@ -154,6 +168,7 @@ private:
 
     friend class MeasureSourcesBuilder;
 
+    bool _isForced;
     afw::table::Key<afw::table::Flag> _badCentroidKey;
     PTR(pex::logging::Log) _log;
     AlgorithmList _algorithms;
@@ -204,7 +219,20 @@ public:
         int canonicalFluxIndex = 0
     ) const;
 
-    explicit MeasureSourcesBuilder(std::string const & prefix = "") : _prefix(prefix) {}
+    /**
+     *  @brief Initialize a multi-stage constructor for MeasureSources.
+     *
+     *  @param[in]     prefix              Name to prepend to all fields registered by algorithms.
+     *  @param[in]     isForced            If true, only applyForced may be called on the created
+     *                                     MeasureSources object.  If false, applyForced may not
+     *                                     be called.
+     *
+     *  Note that for true forced photometry, one should not add a centroider, as this will be
+     *  used to modify the reference positions.
+     */
+    explicit MeasureSourcesBuilder(std::string const & prefix = "", bool isForced = false)
+        :  _isForced(isForced), _prefix(prefix)
+    {}
 
 private:
 
@@ -215,7 +243,8 @@ private:
     };
 
     typedef std::multiset<CONST_PTR(AlgorithmControl),ComparePriority> ControlSet;
-    
+
+    bool _isForced;
     std::string _prefix;
     CONST_PTR(CentroidControl) _centroider;
     ControlSet _ctrls;

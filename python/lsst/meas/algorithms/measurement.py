@@ -159,14 +159,17 @@ class SourceMeasurementConfig(pexConfig.Config):
                     raise ValueError("source flux slot algorithm '%s' is not being run." % slot)
                 
 
-    def makeMeasureSources(self, schema, metadata=None):
+    def makeMeasureSources(self, schema, metadata=None, isForced=False):
         """ Convenience method to make a MeasureSources instance and
         fill it with the configured algorithms.
 
         This is defined in the Config class to support use in unit tests without needing
         to construct a Task object.
         """
-        builder = algorithmsLib.MeasureSourcesBuilder(self.prefix if self.prefix is not None else "")
+        builder = algorithmsLib.MeasureSourcesBuilder(
+            self.prefix if self.prefix is not None else "",
+            isForced
+            )
         if self.centroider.name is not None:
             builder.setCentroider(self.centroider.apply())
         builder.addAlgorithms(self.algorithms.apply())
@@ -180,19 +183,23 @@ class SourceMeasurementTask(pipeBase.Task):
     ConfigClass = SourceMeasurementConfig
     _DefaultName = "sourceMeasurement"
 
-    def __init__(self, schema, algMetadata=None, **kwds):
+    def __init__(self, schema, algMetadata=None, isForced=False, **kwds):
         """Create the task, adding necessary fields to the given schema.
 
         @param[in,out] schema        Schema object for measurement fields; will be modified in-place.
         @param[in,out] algMetadata   Passed to MeasureSources object to be filled with initialization
                                      metadata by algorithms (e.g. radii for aperture photometry).
+        @param[in]     isForced      If true, measurements will be performed in "forced" mode,
+                                     and the references and refWcs arguments must be passed to run()
+                                     and measure().
         @param         **kwds        Passed to Task.__init__.
         """
         pipeBase.Task.__init__(self, **kwds)
-        self.measurer = self.config.makeMeasureSources(schema, algMetadata)
+        self.measurer = self.config.makeMeasureSources(schema, algMetadata, isForced=isForced)
 
         if not self.config.prefix:
-            schema.addField("psfStarCandidate", type="Flag", doc="Source was a candidate to determine the PSF")
+            schema.addField("psfStarCandidate", type="Flag",
+                            doc="Source was a candidate to determine the PSF")
 
         if self.config.doApplyApCorr:
             self.corrKey = schema.addField("aperturecorrection", type=float,
@@ -332,11 +339,12 @@ class SourceMeasurementTask(pipeBase.Task):
 
                 self.preSingleMeasureHook(exposure, sources, i)
 
-                # Make the measurement
+                # Make the measurement; note that we set refineCenter=True, but it
+                # only takes effect if config.centroider != None.
                 if ref is None:
-                    self.measurer.apply(source, exposure)
+                    self.measurer.applyWithPeak(source, exposure, True)
                 else:
-                    self.measurer.apply(source, exposure, ref, refWcs)
+                    self.measurer.applyForced(source, exposure, ref, refWcs, True)
 
                 self.postSingleMeasureHook(exposure, sources, i)
 
