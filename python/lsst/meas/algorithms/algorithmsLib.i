@@ -70,6 +70,8 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 
 %lsst_exceptions();
 
+%import "lsst/afw/geom/Point.i"
+%import "lsst/afw/geom/Box.i"
 %import "lsst/afw/geom/geomLib.i"
 %import "lsst/afw/geom/ellipses/ellipsesLib.i"
 %import "lsst/afw/image/imageLib.i"
@@ -102,7 +104,7 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %include "lsst/meas/algorithms/ShapeletKernel.h"
 %include "lsst/meas/algorithms/ShapeletPsfCandidate.h"
 %include "lsst/meas/algorithms/SizeMagnitudeStarSelector.h"
-
+%include "lsst/meas/algorithms/CartesianPolygon.h"
 
 %shared_ptr(lsst::meas::algorithms::Algorithm)
 %shared_ptr(lsst::meas::algorithms::AlgorithmControl)
@@ -234,3 +236,13 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %template(SincCoeffsD) lsst::meas::algorithms::photometry::SincCoeffs<double>;
 %template(calculateSincApertureFlux) lsst::meas::algorithms::photometry::calculateSincApertureFlux<
     lsst::afw::image::MaskedImage<float> >;
+
+%template(VectorPoint) std::vector<lsst::afw::geom::Point2D>;
+%template(VectorPairPoint) std::vector<std::pair<lsst::afw::geom::Point2D, lsst::afw::geom::Point2D> >;
+
+%extend lsst::meas::algorithms::CartesianPolygon {
+%pythoncode %{
+    def __repr__(self):
+        return "%s(%s)" % (self.__class__.__name__, [p for p in self.getVertices()])
+%}
+}
