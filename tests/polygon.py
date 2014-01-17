@@ -22,6 +22,7 @@
 #
 
 import numpy
+import pickle
 import unittest
 import lsst.utils.tests as utilsTests
 
@@ -88,6 +89,8 @@ class PolygonTest(unittest.TestCase):
             for p1, p2 in poly.getEdges():
                 perimeter += numpy.hypot(p1.getX() - p2.getX(), p1.getY() - p2.getY())
             self.assertAlmostEqual(poly.calculatePerimeter(), perimeter)
+
+            self.assertEqual(pickle.loads(pickle.dumps(poly)), poly)
 
         size = 3.0
         poly = self.square(size=size)

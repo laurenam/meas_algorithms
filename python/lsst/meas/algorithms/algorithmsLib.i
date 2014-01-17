@@ -244,5 +244,7 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %pythoncode %{
     def __repr__(self):
         return "%s(%s)" % (self.__class__.__name__, [p for p in self.getVertices()])
+    def __reduce__(self):
+        return self.__class__, (self.getVertices(),)
 %}
 }
