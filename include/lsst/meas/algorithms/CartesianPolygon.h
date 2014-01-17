@@ -51,7 +51,13 @@ public:
         );
     explicit CartesianPolygon(std::vector<Point> const& vertices);
     virtual ~CartesianPolygon() {}
+
+    // Copying just involves copying the implementation
     CartesianPolygon(CartesianPolygon const& other) : _impl(other._impl) {}
+    CartesianPolygon& operator=(CartesianPolygon const& other) {
+        _impl = other._impl;
+        return *this;
+    }
 
     /// Return number of edges
     ///
@@ -108,8 +114,6 @@ public:
     }
 
 private:
-    CartesianPolygon& operator=(CartesianPolygon const&); // assignment unimplemented
-
     /// pImpl pattern to hide implementation
     struct Impl;
     PTR(Impl) _impl;
