@@ -43,13 +43,13 @@ public:
     typedef afw::geom::Point2D Point;
 
     /// Constructors
-    CartesianPolygon(Box const& box);
-    CartesianPolygon(
+    explicit CartesianPolygon(Box const& box);
+    explicit CartesianPolygon(
         Box const &box,                  ///< Box to convert to polygon
         afw::image::Wcs const& original, ///< Original frame Wcs for Box
         afw::image::Wcs const& target    ///< Target frame Wcs for polygon
         );
-    CartesianPolygon(std::vector<Point> const& vertices);
+    explicit CartesianPolygon(std::vector<Point> const& vertices);
     virtual ~CartesianPolygon() {}
     CartesianPolygon(CartesianPolygon const& other) : _impl(other._impl) {}
 
@@ -92,6 +92,21 @@ public:
     /// intersections).
     CartesianPolygon intersection(CartesianPolygon const& other) const;
 
+    CartesianPolygon convexHull() const;
+
+    /// Create image of polygon
+    ///
+    /// Pixels entirely contained within the polygon receive value unity,
+    /// pixels entirely outside the polygon receive value zero, and pixels
+    /// on the border receive a value equal to the fraction of the pixel
+    /// within the polygon.
+    ///
+    /// Note that the center of the lower-left pixel is 0,0.
+    PTR(afw::image::Image<float>) createImage(afw::geom::Box2I const& bbox) const;
+    PTR(afw::image::Image<float>) createImage(afw::geom::Extent2I const& extent) const {
+        return createImage(afw::geom::Box2I(afw::geom::Point2I(0, 0), extent));
+    }
+
 private:
     CartesianPolygon& operator=(CartesianPolygon const&); // assignment unimplemented
 
@@ -101,6 +116,7 @@ private:
     CartesianPolygon(PTR(Impl) impl) : _impl(impl) {}
 };
 
+std::ostream& operator<<(std::ostream& os, CartesianPolygon const& box);
 
 }}} // namespace lsst::meas::algorithms
 

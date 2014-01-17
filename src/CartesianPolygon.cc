@@ -1,4 +1,7 @@
+#include <cmath>
+
 #include "boost/geometry/geometry.hpp"
+#include "boost/make_shared.hpp"
 
 #include "lsst/pex/exceptions.h"
 #include "lsst/meas/algorithms/CartesianPolygon.h"
@@ -10,6 +13,7 @@ typedef lsst::meas::algorithms::CartesianPolygon::Box LsstBox;
 typedef std::vector<LsstPoint> LsstRing;
 typedef boost::geometry::model::polygon<LsstPoint> BoostPolygon;
 typedef boost::geometry::model::box<LsstPoint> BoostBox;
+typedef boost::geometry::model::linestring<LsstPoint> BoostLineString;
 
 namespace boost { namespace geometry { namespace traits {
 
@@ -72,16 +76,40 @@ LsstBox boostBoxToLsst(BoostBox const& box)
 
 namespace lsst { namespace meas { namespace algorithms {
 
+/// Stream vertices
+std::ostream& operator<<(std::ostream& os, std::vector<LsstPoint> const& vertices)
+{
+    os << "[";
+    size_t num = vertices.size();
+    for (size_t i = 0; i < num - 1; ++i) {
+        os << vertices[i] << ",";
+    }
+    os << vertices[vertices.size() - 1] << "]";
+    return os;
+}
+
+/// Stream BoostPolygon
+std::ostream& operator<<(std::ostream& os, BoostPolygon const& poly)
+{
+    return os << "BoostPolygon(" << poly.outer() << ")";
+}
+
+std::ostream& operator<<(std::ostream& os, CartesianPolygon const& poly)
+{
+    os << "CartesianPolygon(" << poly.getVertices() << ")";
+    return os;
+}
+
 struct CartesianPolygon::Impl
 {
     Impl() : poly() {}
     explicit Impl(CartesianPolygon::Box const& box) : poly() {
         boost::geometry::assign(poly, box);
-        check();
+        // Assignment from a box is correctly handled by BoostPolygon, so doesn't need a "check()"
     }
     explicit Impl(std::vector<CartesianPolygon::Point> const& vertices) : poly() {
         boost::geometry::assign(poly, vertices);
-        check();
+        check(); // because the vertices might not have the correct orientation (CW vs CCW) or be open
     }
     explicit Impl(BoostPolygon _poly) : poly(_poly) {}
 
@@ -180,5 +208,59 @@ CartesianPolygon CartesianPolygon::intersection(CartesianPolygon const& other) c
     return CartesianPolygon(PTR(Impl)(new Impl(result[0])));
 }
 
+CartesianPolygon CartesianPolygon::convexHull() const
+{
+    BoostPolygon hull;
+    boost::geometry::convex_hull(_impl->poly, hull);
+    return CartesianPolygon(PTR(Impl)(new Impl(hull)));
+}
+
+PTR(afw::image::Image<float>) CartesianPolygon::createImage(afw::geom::Box2I const& bbox) const
+{
+    typedef afw::image::Image<float> Image;
+    PTR(Image) image = boost::make_shared<Image>(bbox);
+    image->setXY0(bbox.getMin());
+    *image = 0.0;
+    afw::geom::Box2D bounds = getBBox(); // Polygon bounds
+    int xMin = bounds.getMinX(), xMax = ::ceil(bounds.getMaxX());
+    int yMin = bounds.getMinY(), yMax = ::ceil(bounds.getMaxY());
+    for (int y = yMin; y <= yMax; ++y) {
+        BoostPolygon row;               // A polygon of row y
+        boost::geometry::assign(row, LsstBox(afw::geom::Point2D(xMin, y - 0.5),
+                                             afw::geom::Point2D(xMax, y + 0.5)));
+        std::vector<BoostPolygon> intersections;
+        boost::geometry::intersection(_impl->poly, row, intersections);
+        for (typename std::vector<BoostPolygon>::const_iterator p = intersections.begin();
+             p != intersections.end(); ++p) {
+            double xMinRow = xMax, xMaxRow = xMin;
+            std::vector<LsstPoint> const vertices = p->outer();
+            for (typename std::vector<LsstPoint>::const_iterator q = vertices.begin();
+                 q != vertices.end(); ++q) {
+                double const x = q->getX();
+                if (x < xMinRow) xMinRow = x;
+                if (x > xMaxRow) xMaxRow = x;
+            }
+
+            int x = xMinRow;
+            double xPixelMin = (double)x - 0.5, xPixelMax = (double)x + 0.5;
+            double yPixelMin = (double)y - 0.5, yPixelMax = (double)y + 0.5;
+            for (Image::x_iterator i = image->x_at(x, y); x <= ::ceil(xMaxRow);
+                 ++i, ++x, xPixelMin += 1.0, xPixelMax += 1.0) {
+                BoostPolygon pixel;     // Polygon for single pixel
+                boost::geometry::assign(pixel, LsstBox(afw::geom::Point2D(xPixelMin, yPixelMin),
+                                                       afw::geom::Point2D(xPixelMax, yPixelMax)));
+                std::vector<BoostPolygon> overlap; // Overlap between pixel and polygon
+                boost::geometry::intersection(_impl->poly, pixel, overlap);
+                double area = 0.0;
+                for (std::vector<BoostPolygon>::const_iterator j = overlap.begin(); j != overlap.end(); ++j) {
+                    area += boost::geometry::area(*j);
+                    assert(area <= 1.0); // by construction
+                }
+                *i = area;
+            }
+        }
+    }
+    return image;
+}
 
 }}} // namespace lsst::meas::algorithms

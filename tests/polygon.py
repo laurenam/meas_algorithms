@@ -31,6 +31,7 @@ import lsst.afw.image as afwImage
 
 from lsst.meas.algorithms import CartesianPolygon, VectorPoint
 
+DEBUG = False
 
 def circle(radius, num, x0=0.0, y0=0.0):
     """Generate points on a circle
@@ -102,6 +103,13 @@ class PolygonTest(unittest.TestCase):
             self.assertEqual(abs(p2.getY()), size)
             self.assertNotEqual(p1, p2)
 
+    def testFromBox(self):
+        size = 1.0
+        poly1 = self.square(size=size)
+        box = afwGeom.Box2D(afwGeom.Point2D(-1.0, -1.0), afwGeom.Point2D(1.0, 1.0))
+        poly2 = CartesianPolygon(box)
+        self.assertEqual(poly1, poly2)
+
     def testBBox(self):
         """Test CartesianPolygon.getBBox"""
         size = 3.0
@@ -130,7 +138,6 @@ class PolygonTest(unittest.TestCase):
 
     def testOverlaps(self):
         """Test CartesianPolygon.overlaps"""
-        return
         radius = 1.0
         for num in range(3, 30):
             poly1 = self.polygon(num, radius=radius)
@@ -143,6 +150,28 @@ class PolygonTest(unittest.TestCase):
             self.assertTrue(poly3.overlaps(poly1))
             self.assertFalse(poly1.overlaps(poly4))
             self.assertFalse(poly4.overlaps(poly1))
+
+    def testIntersection(self):
+        """Test CartesianPolygon.intersection"""
+        poly1 = self.square(2.0, -1.0, -1.0)
+        poly2 = self.square(2.0, +1.0, +1.0)
+        poly3 = self.square(1.0,  0.0,  0.0)
+        self.assertEqual(poly1.intersection(poly2), poly3)
+        self.assertEqual(poly2.intersection(poly1), poly3)
+
+    def testImage(self):
+        """Test CartesianPolygon.createImage"""
+        for i, num in enumerate(range(3, 30)):
+            poly = self.polygon(num, 25, 75, 75)
+            box = afwGeom.Box2I(afwGeom.Point2I(15, 15), afwGeom.Extent2I(115, 115))
+            image = poly.createImage(box)
+            if DEBUG:
+                import lsst.afw.display.ds9 as ds9
+                ds9.mtv(image, frame=i+1, title="Polygon nside=%d" % num)
+                for p1, p2 in poly.getEdges():
+                    ds9.line((p1, p2), frame=i+1)
+            self.assertAlmostEqual(image.getArray().sum()/poly.calculateArea(), 1.0, 6)
+
 
 def suite():
     """Returns a suite containing all the test cases in this module."""
