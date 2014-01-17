@@ -26,9 +26,7 @@ import pickle
 import unittest
 import lsst.utils.tests as utilsTests
 
-import lsst.afw.coord as afwCoord
 import lsst.afw.geom as afwGeom
-import lsst.afw.image as afwImage
 
 from lsst.meas.algorithms import CartesianPolygon, VectorPoint
 
