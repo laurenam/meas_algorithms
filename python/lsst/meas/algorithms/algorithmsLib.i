@@ -248,3 +248,9 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
         return self.__class__, (self.getVertices(),)
 %}
 }
+%extend std::vector<lsst::afw::geom::Point2D> {
+%pythoncode %{
+    def __reduce__(self):
+        return self.__class__, ([p for p in self],)
+%}
+}
