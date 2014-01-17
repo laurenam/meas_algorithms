@@ -44,10 +44,13 @@ public:
 
     /// Constructors
     explicit CartesianPolygon(Box const& box);
-    explicit CartesianPolygon(
-        Box const &box,                  ///< Box to convert to polygon
-        afw::image::Wcs const& original, ///< Original frame Wcs for Box
-        afw::image::Wcs const& target    ///< Target frame Wcs for polygon
+    CartesianPolygon(
+        Box const& box,                  ///< Box to convert to polygon
+        CONST_PTR(afw::geom::XYTransform) const& transform ///< Transform from original to target frame
+        );
+    CartesianPolygon(
+        Box const& box,                 ///< Box to convert to polygon
+        afw::geom::AffineTransform const& transform ///< Transform from original to target frame
         );
     explicit CartesianPolygon(std::vector<Point> const& vertices);
     virtual ~CartesianPolygon() {}
@@ -57,6 +60,9 @@ public:
     CartesianPolygon& operator=(CartesianPolygon const& other) {
         _impl = other._impl;
         return *this;
+    }
+    void swap(CartesianPolygon& other) {
+        std::swap(this->_impl, other._impl);
     }
 
     /// Return number of edges
@@ -95,9 +101,16 @@ public:
     /// Returns the intersection of two polygons
     ///
     /// Does not handle non-convex polygons (which might have multiple independent
-    /// intersections).
-    CartesianPolygon intersection(CartesianPolygon const& other) const;
+    /// intersections), and is provided as a convenience for when the polygons are
+    /// known to be non-convex (e.g., image borders).
+    CartesianPolygon intersectionSingle(CartesianPolygon const& other) const;
 
+    /// Returns the intersection of two polygons
+    ///
+    /// Handles the full range of possibilities.
+    std::vector<CartesianPolygon> intersection(CartesianPolygon const& other) const;
+
+    /// Produce a polygon from the convex hull
     CartesianPolygon convexHull() const;
 
     /// Create image of polygon

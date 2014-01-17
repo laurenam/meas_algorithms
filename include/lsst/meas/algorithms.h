@@ -53,3 +53,4 @@
 #include "lsst/meas/algorithms/Jacobian.h"
 #include "lsst/meas/algorithms/FocalPlane.h"
 #include "lsst/meas/algorithms/CartesianPolygon.h"
+#include "lsst/meas/algorithms/DiscreteBackground.h"

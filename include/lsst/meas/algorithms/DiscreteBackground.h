@@ -27,6 +27,8 @@
 
 #include <vector>
 
+#include "ndarray_fwd.h"
+
 #include "lsst/base.h"
 #include "lsst/afw/geom/Box.h"
 #include "lsst/afw/math/Background.h"
@@ -40,30 +42,34 @@ namespace lsst { namespace meas { namespace algorithms {
 class DiscreteBackground {
 public:
     typedef float PixelT;
-    typedef afw::image::Exposure<PixelT> Exposure;
+    typedef afw::image::Exposure<PixelT, afw::image::MaskPixel> Exposure;
     typedef std::vector<afw::geom::Box2I> BoxVector;
     typedef std::vector<CONST_PTR(afw::image::Wcs)> WcsVector;
     typedef std::vector<CartesianPolygon> PolygonVector;
-    typedef std::vector<double> Solution;
+    typedef ndarray::Array<double const, 1, 1> Solution;
 
-    DiscreteBackground(Exposure const& image,
+    DiscreteBackground(Exposure const& exp,
                        afw::geom::Box2I const& box,
-                       CONST_PTR(afw::image::Wcs) const& wcs
+                       CONST_PTR(afw::image::Wcs) const& wcs,
+                       afw::image::MaskPixel const maskVal
         );
-    DiscreteBackground(Exposure const& image,
+    DiscreteBackground(Exposure const& exp,
                        BoxVector const& boxList,
-                       WcsVector const& wcsList
+                       WcsVector const& wcsList,
+                       afw::image::MaskPixel const maskVal
         );
     DiscreteBackground(PolygonVector const& polyList,
-                       Solution const& solution
+                       Solution const& solution,
+                       afw::geom::Box2I const& bbox
         );
     DiscreteBackground(DiscreteBackground const& other) : _impl(other._impl) {}
-    virtual ~DiscreteBackground();
+    virtual ~DiscreteBackground() {}
 
     PTR(afw::image::Image<PixelT>) getImage() const;
 
     PolygonVector getPolygonVector() const;
     Solution getSolution() const;
+    afw::geom::Box2I getBBox() const;
 
 private:
     DiscreteBackground& operator=(CartesianPolygon const&); // assignment unimplemented

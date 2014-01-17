@@ -157,8 +157,19 @@ class PolygonTest(unittest.TestCase):
         poly1 = self.square(2.0, -1.0, -1.0)
         poly2 = self.square(2.0, +1.0, +1.0)
         poly3 = self.square(1.0,  0.0,  0.0)
-        self.assertEqual(poly1.intersection(poly2), poly3)
-        self.assertEqual(poly2.intersection(poly1), poly3)
+
+        # intersectionSingle: assumes there's a single intersection (convex polygons)
+        self.assertEqual(poly1.intersectionSingle(poly2), poly3)
+        self.assertEqual(poly2.intersectionSingle(poly1), poly3)
+
+        # intersection: no assumptions
+        polyList1 = poly1.intersection(poly2)
+        polyList2 = poly2.intersection(poly1)
+        self.assertEqual(len(polyList1), 1)
+        self.assertEqual(len(polyList2), 1)
+        self.assertEqual(polyList1[0], poly3)
+        self.assertEqual(polyList2[0], poly3)
+        self.assertEqual(polyList1[0], polyList2[0])
 
     def testImage(self):
         """Test CartesianPolygon.createImage"""

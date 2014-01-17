@@ -71,6 +71,18 @@ LsstBox boostBoxToLsst(BoostBox const& box)
     return LsstBox(box.min_corner(), box.max_corner());
 }
 
+/// Convert box to corners
+std::vector<LsstPoint> boxToCorners(LsstBox const& box)
+{
+    std::vector<LsstPoint> corners;
+    corners.reserve(4);
+    corners.push_back(box.getMin());
+    corners.push_back(LsstPoint(box.getMaxX(), box.getMinY()));
+    corners.push_back(box.getMax());
+    corners.push_back(LsstPoint(box.getMinX(), box.getMaxY()));
+    return corners;
+}
+
 } // anonymous namespace
 
 
@@ -111,7 +123,7 @@ struct CartesianPolygon::Impl
         boost::geometry::assign(poly, vertices);
         check(); // because the vertices might not have the correct orientation (CW vs CCW) or be open
     }
-    explicit Impl(BoostPolygon _poly) : poly(_poly) {}
+    explicit Impl(BoostPolygon const& _poly) : poly(_poly) {}
 
     void check() { boost::geometry::correct(poly); }
 
@@ -127,21 +139,27 @@ CartesianPolygon::CartesianPolygon(std::vector<CartesianPolygon::Point> const& v
 
 CartesianPolygon::CartesianPolygon(
     CartesianPolygon::Box const &box,
-    afw::image::Wcs const& original,
-    afw::image::Wcs const& target
+    CONST_PTR(afw::geom::XYTransform) const& transform
     ) : _impl(new CartesianPolygon::Impl())
 {
-    std::vector<lsst::afw::geom::Point2D> vertices;
-    vertices.reserve(4);
-    vertices.push_back(box.getMin());
-    vertices.push_back(lsst::afw::geom::Point2D(box.getMaxX(), box.getMinY()));
-    vertices.push_back(box.getMax());
-    vertices.push_back(lsst::afw::geom::Point2D(box.getMinX(), box.getMaxY()));
-    for (typename std::vector<lsst::afw::geom::Point2D>::iterator p = vertices.begin();
-         p != vertices.end(); ++p) {
-        *p = target.skyToPixel(*original.pixelToSky(*p));
+    std::vector<LsstPoint> corners = boxToCorners(box);
+    for (typename std::vector<LsstPoint>::iterator p = corners.begin(); p != corners.end(); ++p) {
+        *p = transform->forwardTransform(*p);
     }
-    boost::geometry::assign(_impl->poly, vertices);
+    boost::geometry::assign(_impl->poly, corners);
+    _impl->check();
+}
+
+CartesianPolygon::CartesianPolygon(
+    CartesianPolygon::Box const &box,
+    afw::geom::AffineTransform const& transform
+    ) : _impl(new CartesianPolygon::Impl())
+{
+    std::vector<LsstPoint> corners = boxToCorners(box);
+    for (typename std::vector<LsstPoint>::iterator p = corners.begin(); p != corners.end(); ++p) {
+        *p = transform(*p);
+    }
+    boost::geometry::assign(_impl->poly, corners);
     _impl->check();
 }
 
@@ -193,7 +211,7 @@ bool CartesianPolygon::overlaps(CartesianPolygon const& other) const {
     return !boost::geometry::disjoint(_impl->poly, other._impl->poly);
 }
 
-CartesianPolygon CartesianPolygon::intersection(CartesianPolygon const& other) const
+CartesianPolygon CartesianPolygon::intersectionSingle(CartesianPolygon const& other) const
 {
     std::vector<BoostPolygon> result;
     boost::geometry::intersection(_impl->poly, other._impl->poly, result);
@@ -206,6 +224,19 @@ CartesianPolygon CartesianPolygon::intersection(CartesianPolygon const& other) c
                            result.size()).str());
     }
     return CartesianPolygon(PTR(Impl)(new Impl(result[0])));
+}
+
+std::vector<CartesianPolygon> CartesianPolygon::intersection(CartesianPolygon const& other) const
+{
+    std::vector<BoostPolygon> boostResult;
+    boost::geometry::intersection(_impl->poly, other._impl->poly, boostResult);
+    std::vector<CartesianPolygon> lsstResult;
+    lsstResult.reserve(boostResult.size());
+    for (typename std::vector<BoostPolygon>::const_iterator i = boostResult.begin();
+         i != boostResult.end(); ++i) {
+        lsstResult.push_back(CartesianPolygon(PTR(Impl)(new Impl(*i))));
+    }
+    return lsstResult;
 }
 
 CartesianPolygon CartesianPolygon::convexHull() const

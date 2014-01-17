@@ -90,6 +90,41 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 
 %declareNumPyConverters(lsst::meas::algorithms::Shapelet::ShapeletVector)
 %declareNumPyConverters(lsst::meas::algorithms::Shapelet::ShapeletCovariance)
+%declareNumPyConverters(lsst::meas::algorithms::DiscreteBackground::Solution)
+
+// Using a typemap because "%template(VectorFoo) std::vector<Foo>" requires a default constructor for Foo
+%typemap(in) std::vector<lsst::meas::algorithms::CartesianPolygon> {
+    std::vector<lsst::meas::algorithms::CartesianPolygon> $1;
+
+    PyObject* obj;
+    if (!PyArg_ParseTuple($input, "O", &obj)) {
+        PyErr_SetString(PyExc_TypeError, "Can't parse as tuple");
+        return NULL;
+    }
+    PyObject* seq = PySequence_Fast(obj, "expected a sequence");
+    size_t len = PySequence_Size(obj);
+    for (size_t i = 0; i < len; i++) {
+        PyObject* item = PySequence_Fast_GET_ITEM(seq, i);
+        void* poly = 0;
+        int res = SWIG_ConvertPtr(item, &poly, $descriptor(lsst::meas::algorithms::CartesianPolygon*), 0);
+        if (!SWIG_IsOK(res)) {
+            SWIG_exception_fail(SWIG_ArgError(res), "while converting CartesianPolygon");
+        }
+        if (!poly) {
+            SWIG_exception_fail(SWIG_ValueError, "while converting CartesianPolygon");
+        }
+        $1.push_back(*reinterpret_cast<lsst::meas::algorithms::CartesianPolygon*>(poly));
+    }
+}
+%typemap(out) std::vector<lsst::meas::algorithms::CartesianPolygon> {
+    $result = PyList_New($1.size());
+    for (size_t i = 0; i < $1.size(); ++i) {
+        PyList_SetItem($result, i,
+                       SWIG_NewPointerObj(new lsst::meas::algorithms::CartesianPolygon($1.operator[](i)),
+                                          $descriptor(lsst::meas::algorithms::CartesianPolygon*),
+                                          SWIG_POINTER_OWN | 0 ));
+    }
+}
 
 %shared_ptr(lsst::meas::algorithms::Shapelet)
 %shared_ptr(lsst::meas::algorithms::ShapeletInterpolation)
@@ -105,6 +140,7 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %include "lsst/meas/algorithms/ShapeletPsfCandidate.h"
 %include "lsst/meas/algorithms/SizeMagnitudeStarSelector.h"
 %include "lsst/meas/algorithms/CartesianPolygon.h"
+%include "lsst/meas/algorithms/DiscreteBackground.h"
 
 %shared_ptr(lsst::meas::algorithms::Algorithm)
 %shared_ptr(lsst::meas::algorithms::AlgorithmControl)
@@ -213,6 +249,7 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
   }
 }
 
+
 %define %instantiate_templates(SUFFIX, PIXTYPE)
     %template(findCosmicRays) lsst::meas::algorithms::findCosmicRays<
                                   lsst::afw::image::MaskedImage<PIXTYPE,
@@ -239,6 +276,7 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 
 %template(VectorPoint) std::vector<lsst::afw::geom::Point2D>;
 %template(VectorPairPoint) std::vector<std::pair<lsst::afw::geom::Point2D, lsst::afw::geom::Point2D> >;
+%template(VectorWcs) std::vector<CONST_PTR(lsst::afw::image::Wcs)>;
 
 %extend lsst::meas::algorithms::CartesianPolygon {
 %pythoncode %{
@@ -254,3 +292,18 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
         return self.__class__, ([p for p in self],)
 %}
 }
+
+//>(static_cast< const std::vector< lsst::meas::algorithms::CartesianPolygon,std::allocator< lsst::meas::algorithms::CartesianPolygon > >& >(result))), SWIGTYPE_p_std__vectorT_lsst__meas__algorithms__CartesianPolygon_std__allocatorT_lsst__meas__algorithms__CartesianPolygon_t_t, SWIG_POINTER_OWN |  0 );
+
+//                       SWIG_NewPointerObj(SWIG_as_voidptr($1[i]),
+//                                          SWIGTYPE_p_lsst__meas__algorithms__CartesianPolygon,
+//                                          SWIG_POINTER_NEW |  0 ));
+//%template(VectorCartesianPolygon) std::vector<lsst::meas::algorithms::CartesianPolygon>;
+
+%extend lsst::meas::algorithms::DiscreteBackground {
+    %pythoncode %{
+        def __reduce__(self):
+            return self.__class__, (self.getPolygonVector(), self.getSolution(), self.getBBox())
+    %}
+}
+
