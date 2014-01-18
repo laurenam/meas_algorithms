@@ -62,8 +62,8 @@ class DiscreteBackgroundTest(unittest.TestCase):
             image.setXY0(self.x0, self.y0)
             image.set(0)
             for j, p in enumerate(polyList):
-                polyImage = p.createImage(image.getBBox())
-                image.scaledPlus(j + self.offset, polyImage)
+                polyImage = p.createImage(image.getBBox(afwImage.PARENT))
+                image.getImage().scaledPlus(j + self.offset, polyImage)
             bg = DiscreteBackground(image, polyList, 0)
             bgImage = bg.getImage()
 

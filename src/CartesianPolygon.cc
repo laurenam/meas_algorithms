@@ -1,4 +1,5 @@
 #include <cmath>
+#include <algorithm>
 
 #include "boost/geometry/geometry.hpp"
 #include "boost/make_shared.hpp"
@@ -251,10 +252,13 @@ PTR(afw::image::Image<float>) CartesianPolygon::createImage(afw::geom::Box2I con
     typedef afw::image::Image<float> Image;
     PTR(Image) image = boost::make_shared<Image>(bbox);
     image->setXY0(bbox.getMin());
+    int x0 = bbox.getMinX(), y0 = bbox.getMinY();
     *image = 0.0;
     afw::geom::Box2D bounds = getBBox(); // Polygon bounds
-    int xMin = bounds.getMinX(), xMax = ::ceil(bounds.getMaxX());
-    int yMin = bounds.getMinY(), yMax = ::ceil(bounds.getMaxY());
+    int xMin = std::max(static_cast<int>(bounds.getMinX()), bbox.getMinX());
+    int xMax = std::min(static_cast<int>(::ceil(bounds.getMaxX())), bbox.getMaxX());
+    int yMin = std::max(static_cast<int>(bounds.getMinY()), bbox.getMinY());
+    int yMax = std::min(static_cast<int>(::ceil(bounds.getMaxY())), bbox.getMaxY());
     for (int y = yMin; y <= yMax; ++y) {
         BoostPolygon row;               // A polygon of row y
         boost::geometry::assign(row, LsstBox(afw::geom::Point2D(xMin, y - 0.5),
@@ -275,7 +279,7 @@ PTR(afw::image::Image<float>) CartesianPolygon::createImage(afw::geom::Box2I con
             int x = xMinRow;
             double xPixelMin = (double)x - 0.5, xPixelMax = (double)x + 0.5;
             double yPixelMin = (double)y - 0.5, yPixelMax = (double)y + 0.5;
-            for (Image::x_iterator i = image->x_at(x, y); x <= ::ceil(xMaxRow);
+            for (Image::x_iterator i = image->x_at(x - x0, y - y0); x <= ::ceil(xMaxRow);
                  ++i, ++x, xPixelMin += 1.0, xPixelMax += 1.0) {
                 BoostPolygon pixel;     // Polygon for single pixel
                 boost::geometry::assign(pixel, LsstBox(afw::geom::Point2D(xPixelMin, yPixelMin),
