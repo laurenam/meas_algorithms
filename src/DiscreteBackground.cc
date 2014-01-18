@@ -58,7 +58,7 @@ struct DiscreteBackground::Impl
                                            exp.getWcs(), wcs))),
           solution(),
           bbox(exp.getBBox()) {
-        solve(exp, maskVal);
+        solve(exp.getMaskedImage(), maskVal);
     }
     Impl(Exposure const& exp, BoxVector const& boxList, WcsVector const& wcsList,
          afw::image::MaskPixel const maskVal)
@@ -77,12 +77,16 @@ struct DiscreteBackground::Impl
                                    afw::geom::Box2D(*b),
                                    boost::make_shared<afw::image::XYTransformFromWcsPair>(wcs, *w)));
         }
-        solve(exp, maskVal);
+        solve(exp.getMaskedImage(), maskVal);
+    }
+    Impl(MaskedImage const& image, PolygonVector const& _polygons, afw::image::MaskPixel maskVal)
+        : polygons(_polygons), solution(), bbox(image.getBBox()) {
+        solve(image, maskVal);
     }
     Impl(PolygonVector _polygons, Solution const& _solution, afw::geom::Box2I _bbox)
         : polygons(_polygons), solution(_solution), bbox(_bbox) {}
 
-    void solve(Exposure const& exp, afw::image::MaskPixel const maskVal);
+    void solve(MaskedImage const& mi, afw::image::MaskPixel const maskVal);
 
     PolygonVector polygons;
     Solution solution;
@@ -90,7 +94,7 @@ struct DiscreteBackground::Impl
 };
 
 
-void DiscreteBackground::Impl::solve(Exposure const& exp, afw::image::MaskPixel const maskVal)
+void DiscreteBackground::Impl::solve(MaskedImage const& mi, afw::image::MaskPixel const maskVal)
 {
     // Construct normal equation and solve.  Normal equation consists of matrix and vector.
     // Matrix is dot product of model and model; vector is dot product of model and data.
@@ -100,9 +104,9 @@ void DiscreteBackground::Impl::solve(Exposure const& exp, afw::image::MaskPixel 
     Matrix matrix = ndarray::allocate(num, num);
     Vector vector = ndarray::allocate(num);
 
-    afw::geom::Box2I const& bbox = exp.getBBox();
-    afw::image::Image<float> const& image = *exp.getMaskedImage().getImage();
-    afw::image::Mask<afw::image::MaskPixel> const& mask = *exp.getMaskedImage().getMask();
+    afw::geom::Box2I const& bbox = mi.getBBox();
+    afw::image::Image<float> const& image = *mi.getImage();
+    afw::image::Mask<afw::image::MaskPixel> const& mask = *mi.getMask();
 
     // More worried about memory footprint than raw speed, so not caching results of Polygon.createImage().
     // XXX can do much faster dot products by making a subimage of where the polygon(s) are non-zero.
@@ -134,6 +138,11 @@ DiscreteBackground::DiscreteBackground(Exposure const& exp,
                                        WcsVector const& wcsList,
                                        afw::image::MaskPixel const maskVal
     ) : _impl(new Impl(exp, boxList, wcsList, maskVal)) {}
+
+DiscreteBackground::DiscreteBackground(MaskedImage const& image,
+                                       PolygonVector const& polygons,
+                                       afw::image::MaskPixel const maskVal
+    ) : _impl(new Impl(image, polygons, maskVal)) {}
 
 DiscreteBackground::DiscreteBackground(PolygonVector const& polyList,
                                        Solution const& solution,

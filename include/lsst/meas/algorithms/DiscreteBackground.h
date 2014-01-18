@@ -43,6 +43,7 @@ class DiscreteBackground {
 public:
     typedef float PixelT;
     typedef afw::image::Exposure<PixelT, afw::image::MaskPixel> Exposure;
+    typedef afw::image::MaskedImage<PixelT, afw::image::MaskPixel> MaskedImage;
     typedef std::vector<afw::geom::Box2I> BoxVector;
     typedef std::vector<CONST_PTR(afw::image::Wcs)> WcsVector;
     typedef std::vector<CartesianPolygon> PolygonVector;
@@ -56,6 +57,10 @@ public:
     DiscreteBackground(Exposure const& exp,
                        BoxVector const& boxList,
                        WcsVector const& wcsList,
+                       afw::image::MaskPixel const maskVal
+        );
+    DiscreteBackground(MaskedImage const& image,
+                       PolygonVector const& polygons,
                        afw::image::MaskPixel const maskVal
         );
     DiscreteBackground(PolygonVector const& polyList,

@@ -284,6 +284,12 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
         return "%s(%s)" % (self.__class__.__name__, [p for p in self.getVertices()])
     def __reduce__(self):
         return self.__class__, (self.getVertices(),)
+    def display(self, frame=1, ctype=None):
+        """Display polygon on existing frame in ds9"""
+        import lsst.afw.display.ds9 as ds9
+        with ds9.Buffering():
+            for p1, p2 in self.getEdges():
+                ds9.line((p1, p2), frame=frame, ctype=ctype)
 %}
 }
 %extend std::vector<lsst::afw::geom::Point2D> {
