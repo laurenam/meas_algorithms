@@ -74,6 +74,9 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %import "lsst/afw/geom/Box.i"
 %import "lsst/afw/geom/geomLib.i"
 %import "lsst/afw/geom/ellipses/ellipsesLib.i"
+%import "lsst/afw/image/maskedImage.i"
+%import "lsst/afw/image/wcs.i"
+%import "lsst/afw/image/image.i"
 %import "lsst/afw/image/imageLib.i"
 %import "lsst/afw/detection/detectionLib.i"
 %import "lsst/afw/math/mathLib.i"
@@ -92,29 +95,28 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %declareNumPyConverters(lsst::meas::algorithms::Shapelet::ShapeletCovariance)
 %declareNumPyConverters(lsst::meas::algorithms::DiscreteBackground::Solution)
 
-// Using a typemap because "%template(VectorFoo) std::vector<Foo>" requires a default constructor for Foo
-%typemap(in) std::vector<lsst::meas::algorithms::CartesianPolygon> {
-    std::vector<lsst::meas::algorithms::CartesianPolygon> $1;
-
-    PyObject* obj;
-    if (!PyArg_ParseTuple($input, "O", &obj)) {
-        PyErr_SetString(PyExc_TypeError, "Can't parse as tuple");
-        return NULL;
-    }
-    PyObject* seq = PySequence_Fast(obj, "expected a sequence");
-    size_t len = PySequence_Size(obj);
-    for (size_t i = 0; i < len; i++) {
+// Using typemaps because "%template(VectorFoo) std::vector<Foo>" requires a default constructor for Foo
+%typemap(typecheck) std::vector<lsst::meas::algorithms::CartesianPolygon>& {
+    $1 = PySequence_Check($input) ? 1 : 0;
+}
+%typemap(in) std::vector<lsst::meas::algorithms::CartesianPolygon>& (std::vector<lsst::meas::algorithms::CartesianPolygon> mapped) {
+    PyObject* seq = PySequence_Fast($input, "expected a sequence");
+    size_t len = PySequence_Fast_GET_SIZE(seq);
+    for (size_t i = 0; i < len; ++i) {
         PyObject* item = PySequence_Fast_GET_ITEM(seq, i);
-        void* poly = 0;
-        int res = SWIG_ConvertPtr(item, &poly, $descriptor(lsst::meas::algorithms::CartesianPolygon*), 0);
+        void* vPoly = 0;
+        int res = SWIG_ConvertPtr(item, &vPoly, $descriptor(lsst::meas::algorithms::CartesianPolygon*), 0);
         if (!SWIG_IsOK(res)) {
             SWIG_exception_fail(SWIG_ArgError(res), "while converting CartesianPolygon");
         }
-        if (!poly) {
+        if (!vPoly) {
             SWIG_exception_fail(SWIG_ValueError, "while converting CartesianPolygon");
         }
-        $1.push_back(*reinterpret_cast<lsst::meas::algorithms::CartesianPolygon*>(poly));
+        lsst::meas::algorithms::CartesianPolygon* poly =
+            reinterpret_cast<lsst::meas::algorithms::CartesianPolygon*>(vPoly);
+        mapped.push_back(*poly);
     }
+    $1 = &mapped;
 }
 %typemap(out) std::vector<lsst::meas::algorithms::CartesianPolygon> {
     $result = PyList_New($1.size());
