@@ -286,12 +286,14 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
         return "%s(%s)" % (self.__class__.__name__, [p for p in self.getVertices()])
     def __reduce__(self):
         return self.__class__, (self.getVertices(),)
-    def display(self, frame=1, ctype=None):
+    def display(self, xy0=None, frame=1, ctype=None):
         """Display polygon on existing frame in ds9"""
+        import lsst.afw.geom as afwGeom
         import lsst.afw.display.ds9 as ds9
+        xy0 = afwGeom.Extent2D(0,0) if xy0 is None else afwGeom.Extent2D(xy0)
         with ds9.Buffering():
             for p1, p2 in self.getEdges():
-                ds9.line((p1, p2), frame=frame, ctype=ctype)
+                ds9.line((p1 - xy0, p2 - xy0), frame=frame, ctype=ctype)
 %}
 }
 %extend std::vector<lsst::afw::geom::Point2D> {
