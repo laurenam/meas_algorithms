@@ -36,16 +36,14 @@ DEBUG = False
 
 class DiscreteBackgroundTest(unittest.TestCase):
     def setUp(self):
-        self.x0 = 1234
-        self.y0 = 5678
-        self.xCenter = 123.4
-        self.yCenter = 567.8
-        self.xSize = 1000
-        self.ySize = 2000
-        self.offset = 1.234
+        self.x0, self.y0 = 1234, 5678             # Image offset from parent
+        self.size = 250                           # Image size
+        self.xCenter, self.yCenter = 123.4, 134.5 # Polygon center, in "LOCAL" frame
+        self.xSize, self.ySize = 100, 200         # Polygon size
+        self.offset = 1.234                       # Coefficient offset
 
     def polygon(self, angle):
-        """Generate a polygon"""
+        """Generate a polygon oriented at the nominated angle"""
         x0 = self.x0 + self.xCenter
         y0 = self.y0 + self.yCenter
         box = afwGeom.Box2D(afwGeom.Point2D(x0 - self.xSize/2, y0 - self.ySize/2),
@@ -53,41 +51,49 @@ class DiscreteBackgroundTest(unittest.TestCase):
         transform = (AffineTransform.makeTranslation(afwGeom.Extent2D(x0, y0)) *
                      AffineTransform.makeRotation(angle.asRadians())*
                      AffineTransform.makeTranslation(afwGeom.Extent2D(-x0, -y0)))
-        return CartesianPolygon(box, transform)
+        poly = CartesianPolygon(box, transform)
+        return poly
+
+    def checkBackground(self, num):
+        """Check background subtraction with 'num' polygons"""
+        polyList = [self.polygon(afwGeom.Angle(afwGeom.PI/num*j)) for j in range(num)]
+        image = afwImage.MaskedImageF(self.size, self.size)
+        image.setXY0(self.x0, self.y0)
+        image.set(0)
+        coeffs = numpy.array([j + self.offset for j in range(num)])
+        for c, p in zip(coeffs, polyList):
+            polyImage = p.createImage(image.getBBox(afwImage.PARENT))
+            image.getImage().scaledPlus(c, polyImage)
+        bg = DiscreteBackground(image, polyList, 0)
+        bgImage = bg.getImage()
+
+        diff = image.clone()
+        diff -= bgImage
+
+        if DEBUG:
+            numPlots = 3
+            import lsst.afw.display.ds9 as ds9
+            ds9.mtv(image, frame=numPlots*i+1, title="Image from %d polygons" % num)
+            ds9.mtv(bgImage, frame=numPlots*i+2, title="Background model with %d polygons" % num)
+            ds9.mtv(diff, frame=numPlots*i+3, title="Difference for %d polygons" % num)
+            for frame in range(numPlots*i+1, numPlots*(i+1)+1):
+                for p in polyList:
+                    p.display(frame=frame, xy0=image.getXY0())
+
+        # Check coefficients
+        solution = bg.getSolution()
+        solRms = numpy.sqrt(numpy.average((solution - coeffs)**2))
+        self.assertAlmostEqual(solRms, 0.0, 6)
+
+        # Check subtracted image
+        diffRms = numpy.sqrt(numpy.average(diff.getImage().getArray()**2))
+        self.assertAlmostEqual(diffRms, 0.0, 5)
+
+        print num, solRms, diffRms
 
     def testBackground(self):
         for i, num in enumerate(range(3, 10)):
-            polyList = [self.polygon(afwGeom.Angle(2*afwGeom.PI/num*i)) for i in range(num)]
-            image = afwImage.MaskedImageF(self.xSize, self.ySize)
-            image.setXY0(self.x0, self.y0)
-            image.set(0)
-            for j, p in enumerate(polyList):
-                polyImage = p.createImage(image.getBBox(afwImage.PARENT))
-                image.getImage().scaledPlus(j + self.offset, polyImage)
-            bg = DiscreteBackground(image, polyList, 0)
-            bgImage = bg.getImage()
-
-            solution = bg.getSolution()
-            for j in range(num):
-                # XXX may not be a good idea due to degeneracy
-                self.assertAlmostEqual(solution[j], j + self.offset)
-
-            diff = image.clone()
-            diff -= bgImage
-
-            if DEBUG:
-                numPlots = 3
-                import lsst.afw.display.ds9 as ds9
-                ds9.mtv(image, frame=numPlots*i+1, title="Image from %d polygons" % num)
-                ds9.mtv(bgImage, frame=numPlots*i+2, title="Background model with %d polygons" % num)
-                ds9.mtv(diff, frame=numPlots*i+3, title="Difference for %d polygons" % num)
-                for frame in range(numPlots*i+1, numPlots*(i+1)+1):
-                    for p in polyList:
-                        p.display(frame=frame)
-
-            diff *= diff # chi^2
-            print diff.sum()
-
+            self.checkBackground(num)
 
 def suite():
     """Returns a suite containing all the test cases in this module."""
