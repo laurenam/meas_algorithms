@@ -303,13 +303,6 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %}
 }
 
-//>(static_cast< const std::vector< lsst::meas::algorithms::CartesianPolygon,std::allocator< lsst::meas::algorithms::CartesianPolygon > >& >(result))), SWIGTYPE_p_std__vectorT_lsst__meas__algorithms__CartesianPolygon_std__allocatorT_lsst__meas__algorithms__CartesianPolygon_t_t, SWIG_POINTER_OWN |  0 );
-
-//                       SWIG_NewPointerObj(SWIG_as_voidptr($1[i]),
-//                                          SWIGTYPE_p_lsst__meas__algorithms__CartesianPolygon,
-//                                          SWIG_POINTER_NEW |  0 ));
-//%template(VectorCartesianPolygon) std::vector<lsst::meas::algorithms::CartesianPolygon>;
-
 %extend lsst::meas::algorithms::DiscreteBackground {
     %pythoncode %{
         def __reduce__(self):
