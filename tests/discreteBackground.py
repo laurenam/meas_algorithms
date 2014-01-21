@@ -65,18 +65,21 @@ class DiscreteBackgroundTest(unittest.TestCase):
             polyImage = p.createImage(image.getBBox(afwImage.PARENT))
             image.getImage().scaledPlus(c, polyImage)
         bg = DiscreteBackground(image, polyList, 0)
+
+        self.assertEqual(bg, bg)
+        self.assertEqual(pickle.loads(pickle.dumps(bg)), bg)
+
         bgImage = bg.getImage()
 
         diff = image.clone()
         diff -= bgImage
 
         if DEBUG:
-            numPlots = 3
             import lsst.afw.display.ds9 as ds9
-            ds9.mtv(image, frame=numPlots*i+1, title="Image from %d polygons" % num)
-            ds9.mtv(bgImage, frame=numPlots*i+2, title="Background model with %d polygons" % num)
-            ds9.mtv(diff, frame=numPlots*i+3, title="Difference for %d polygons" % num)
-            for frame in range(numPlots*i+1, numPlots*(i+1)+1):
+            ds9.mtv(image, frame=1, title="Image from %d polygons" % num)
+            ds9.mtv(bgImage, frame=2, title="Background model with %d polygons" % num)
+            ds9.mtv(diff, frame=3, title="Difference for %d polygons" % num)
+            for frame in range(1, 4):
                 for p in polyList:
                     p.display(frame=frame, xy0=image.getXY0())
 
@@ -90,10 +93,15 @@ class DiscreteBackgroundTest(unittest.TestCase):
         self.assertAlmostEqual(diffRms, 0.0, 5)
 
         print num, solRms, diffRms
+        return bg
 
     def testBackground(self):
-        for i, num in enumerate(range(3, 10)):
-            self.checkBackground(num)
+        bgList = []
+        for num in range(3, 10):
+            bg = self.checkBackground(num)
+            for other in bgList:
+                self.assertNotEqual(bg, other)
+            bgList.append(bg)
 
 def suite():
     """Returns a suite containing all the test cases in this module."""

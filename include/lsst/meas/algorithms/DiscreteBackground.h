@@ -72,6 +72,9 @@ public:
 
     PTR(afw::image::Image<PixelT>) getImage() const;
 
+    bool operator==(DiscreteBackground const& other) const;
+    bool operator!=(DiscreteBackground const& other) const { return !(*this == other); }
+
     PolygonVector getPolygonVector() const;
     Solution getSolution() const;
     afw::geom::Box2I getBBox() const;

@@ -87,6 +87,10 @@ struct DiscreteBackground::Impl
 
     void solve(MaskedImage const& mi, afw::image::MaskPixel const maskVal);
 
+    void _assert() const {
+        assert(polygons.size() == static_cast<size_t>(solution.getShape()[0])); // shape is signed
+    }
+
     PolygonVector polygons;
     Solution solution;
     afw::geom::Box2I bbox;
@@ -150,7 +154,7 @@ DiscreteBackground::DiscreteBackground(PolygonVector const& polyList,
 
 PTR(afw::image::Image<DiscreteBackground::PixelT>) DiscreteBackground::getImage() const
 {
-    assert(_impl->polygons.size() == static_cast<size_t>(_impl->solution.getShape()[0])); // shape is signed
+    _impl->_assert();
     PTR(afw::image::Image<PixelT>) image;
     PolygonVector::const_iterator p = _impl->polygons.begin();
     Solution::Iterator s = _impl->solution.begin();
@@ -164,6 +168,22 @@ PTR(afw::image::Image<DiscreteBackground::PixelT>) DiscreteBackground::getImage(
         }
     }
     return image;
+}
+
+bool DiscreteBackground::operator==(DiscreteBackground const& other) const
+{
+    Impl const& lhs = *_impl, rhs = *other._impl;
+    if (lhs.polygons.size() != rhs.polygons.size()) return false;
+    lhs._assert();
+    rhs._assert();
+    if (lhs.bbox != rhs.bbox) return false;
+    // Can't directly compare 'solution's because ndarray::Array's operator== does a shallow comparison
+    if (lhs.solution.asEigen() != rhs.solution.asEigen()) return false;
+    for (PolygonVector::const_iterator i = lhs.polygons.begin(), j = rhs.polygons.begin();
+         i != lhs.polygons.end(); ++i, ++j) {
+        if (*i != *j) return false;
+    }
+    return true;
 }
 
 DiscreteBackground::PolygonVector DiscreteBackground::getPolygonVector() const { return _impl->polygons; }
