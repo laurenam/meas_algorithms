@@ -97,18 +97,28 @@ public:
 
     /// Returns whether the polygons overlap each other
     bool overlaps(CartesianPolygon const& other) const;
+    bool overlaps(Box const& box) const;
+    bool overlaps(afw::geom::Box2I const& box) const { return overlaps(Box(box)); }
 
     /// Returns the intersection of two polygons
     ///
     /// Does not handle non-convex polygons (which might have multiple independent
     /// intersections), and is provided as a convenience for when the polygons are
-    /// known to be non-convex (e.g., image borders).
+    /// known to be convex (e.g., image borders) and overlapping.
     CartesianPolygon intersectionSingle(CartesianPolygon const& other) const;
+    CartesianPolygon intersectionSingle(Box const& box) const;
+    CartesianPolygon intersectionSingle(afw::geom::Box2I const& box) const {
+        return intersectionSingle(Box(box));
+    }
 
     /// Returns the intersection of two polygons
     ///
     /// Handles the full range of possibilities.
     std::vector<CartesianPolygon> intersection(CartesianPolygon const& other) const;
+    std::vector<CartesianPolygon> intersection(Box const& box) const;
+    std::vector<CartesianPolygon> intersection(afw::geom::Box2I const& box) const {
+        return intersection(Box(box));
+    }
 
     /// Produce a polygon from the convex hull
     CartesianPolygon convexHull() const;
@@ -133,7 +143,7 @@ private:
     CartesianPolygon(PTR(Impl) impl) : _impl(impl) {}
 };
 
-std::ostream& operator<<(std::ostream& os, CartesianPolygon const& box);
+std::ostream& operator<<(std::ostream& os, CartesianPolygon const& poly);
 
 }}} // namespace lsst::meas::algorithms
 

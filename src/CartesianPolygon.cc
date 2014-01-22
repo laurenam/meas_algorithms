@@ -128,8 +128,50 @@ struct CartesianPolygon::Impl
 
     void check() { boost::geometry::correct(poly); }
 
+    template <class PolyT>
+    bool overlaps(PolyT const& other) const {
+        return !boost::geometry::disjoint(poly, other);
+    }
+
+    template <class PolyT>
+    CartesianPolygon intersectionSingle(PolyT const& other) const;
+
+    template <class PolyT>
+    std::vector<CartesianPolygon> intersection(PolyT const& other) const;
+
     BoostPolygon poly;
 };
+
+template <class PolyT>
+CartesianPolygon CartesianPolygon::Impl::intersectionSingle(PolyT const& other) const
+{
+    std::vector<BoostPolygon> result;
+    boost::geometry::intersection(poly, other, result);
+    if (result.size() == 0) {
+        throw LSST_EXCEPT(pex::exceptions::RuntimeErrorException, "Polygons have no intersection");
+    }
+    if (result.size() > 1) {
+        throw LSST_EXCEPT(pex::exceptions::RuntimeErrorException,
+                          (boost::format("Multiple polygons (%d) created by intersection()") %
+                           result.size()).str());
+    }
+    return CartesianPolygon(PTR(Impl)(new Impl(result[0])));
+}
+
+template <class PolyT>
+std::vector<CartesianPolygon> CartesianPolygon::Impl::intersection(PolyT const& other) const
+{
+    std::vector<BoostPolygon> boostResult;
+    boost::geometry::intersection(poly, other, boostResult);
+    std::vector<CartesianPolygon> lsstResult;
+    lsstResult.reserve(boostResult.size());
+    for (typename std::vector<BoostPolygon>::const_iterator i = boostResult.begin();
+         i != boostResult.end(); ++i) {
+        lsstResult.push_back(CartesianPolygon(PTR(Impl)(new Impl(*i))));
+    }
+    return lsstResult;
+}
+
 
 
 CartesianPolygon::CartesianPolygon(CartesianPolygon::Box const& box) :
@@ -209,35 +251,27 @@ bool CartesianPolygon::contains(CartesianPolygon::Point const& point) const
 }
 
 bool CartesianPolygon::overlaps(CartesianPolygon const& other) const {
-    return !boost::geometry::disjoint(_impl->poly, other._impl->poly);
+    return _impl->overlaps(other._impl->poly);
 }
 
-CartesianPolygon CartesianPolygon::intersectionSingle(CartesianPolygon const& other) const
-{
-    std::vector<BoostPolygon> result;
-    boost::geometry::intersection(_impl->poly, other._impl->poly, result);
-    if (result.size() == 0) {
-        throw LSST_EXCEPT(pex::exceptions::RuntimeErrorException, "Polygons have no intersection");
-    }
-    if (result.size() > 1) {
-        throw LSST_EXCEPT(pex::exceptions::RuntimeErrorException,
-                          (boost::format("Multiple polygons (%d) created by intersection()") %
-                           result.size()).str());
-    }
-    return CartesianPolygon(PTR(Impl)(new Impl(result[0])));
+bool CartesianPolygon::overlaps(Box const& box) const {
+    return _impl->overlaps(box);
 }
 
-std::vector<CartesianPolygon> CartesianPolygon::intersection(CartesianPolygon const& other) const
-{
-    std::vector<BoostPolygon> boostResult;
-    boost::geometry::intersection(_impl->poly, other._impl->poly, boostResult);
-    std::vector<CartesianPolygon> lsstResult;
-    lsstResult.reserve(boostResult.size());
-    for (typename std::vector<BoostPolygon>::const_iterator i = boostResult.begin();
-         i != boostResult.end(); ++i) {
-        lsstResult.push_back(CartesianPolygon(PTR(Impl)(new Impl(*i))));
-    }
-    return lsstResult;
+CartesianPolygon CartesianPolygon::intersectionSingle(CartesianPolygon const& other) const {
+    return _impl->intersectionSingle(other._impl->poly);
+}
+
+CartesianPolygon CartesianPolygon::intersectionSingle(Box const& box) const {
+    return _impl->intersectionSingle(box);
+}
+
+std::vector<CartesianPolygon> CartesianPolygon::intersection(CartesianPolygon const& other) const {
+    return _impl->intersection(other._impl->poly);
+}
+
+std::vector<CartesianPolygon> CartesianPolygon::intersection(Box const& box) const {
+    return _impl->intersection(box);
 }
 
 CartesianPolygon CartesianPolygon::convexHull() const
