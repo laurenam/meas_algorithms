@@ -27,6 +27,8 @@ import unittest
 import lsst.utils.tests as utilsTests
 
 import lsst.afw.geom as afwGeom
+import lsst.afw.image as afwImage
+import lsst.afw.coord as afwCoord
 
 from lsst.meas.algorithms import CartesianPolygon, VectorPoint
 
@@ -184,6 +186,26 @@ class PolygonTest(unittest.TestCase):
                     ds9.line((p1, p2), frame=i+1)
             self.assertAlmostEqual(image.getArray().sum()/poly.calculateArea(), 1.0, 6)
 
+    def testTransform(self):
+        """Test constructor for CartesianPolygon involving transforms"""
+        box = afwGeom.Box2D(afwGeom.Point2D(0.0, 0.0), afwGeom.Point2D(123.4, 567.8))
+        poly1 = CartesianPolygon(box)
+        scale = (0.2*afwGeom.arcseconds).asDegrees()
+        wcs = afwImage.makeWcs(afwCoord.Coord(0.0*afwGeom.degrees, 0.0*afwGeom.degrees),
+                               afwGeom.Point2D(0.0, 0.0), scale, 0.0, 0.0, scale)
+        transform = afwImage.XYTransformFromWcsPair(wcs, wcs)
+        poly2 = CartesianPolygon(box, transform)
+
+        # We lose some very small precision in the XYTransformFromWcsPair
+        # so we can't compare the polygons directly.
+        self.assertEqual(poly1.getNumEdges(), poly2.getNumEdges())
+        for p1, p2 in zip(poly1.getVertices(), poly2.getVertices()):
+            self.assertAlmostEqual(p1.getX(), p2.getX())
+            self.assertAlmostEqual(p1.getY(), p2.getY())
+
+        transform = afwGeom.AffineTransform.makeScaling(1.0)
+        poly3 = CartesianPolygon(box, transform)
+        self.assertEqual(poly1, poly3)
 
 def suite():
     """Returns a suite containing all the test cases in this module."""
