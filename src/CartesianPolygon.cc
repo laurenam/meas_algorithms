@@ -84,6 +84,33 @@ std::vector<LsstPoint> boxToCorners(LsstBox const& box)
     return corners;
 }
 
+/// Calculate area of overlap between polygon and pixel
+double pixelOverlap(BoostPolygon const& poly, int const x, int const y)
+{
+    BoostPolygon pixel;     // Polygon for single pixel
+    boost::geometry::assign(pixel, LsstBox(lsst::afw::geom::Point2D(x - 0.5, y - 0.5),
+                                           lsst::afw::geom::Extent2D(1.0, 1.0)));
+    std::vector<BoostPolygon> overlap; // Overlap between pixel and polygon
+    boost::geometry::intersection(poly, pixel, overlap);
+    double area = 0.0;
+    for (std::vector<BoostPolygon>::const_iterator i = overlap.begin(); i != overlap.end(); ++i) {
+        area += boost::geometry::area(*i);
+        assert(area <= 1.0); // by construction
+    }
+    return area;
+}
+
+/// Set each pixel in a row to the amount of overlap with polygon
+void pixelRowOverlap(PTR(lsst::afw::image::Image<float>) const image,
+                     BoostPolygon const& poly, int const xStart, int const xStop, int const y)
+{
+    int x = xStart;
+    for (lsst::afw::image::Image<float>::x_iterator i = image->x_at(x - image->getX0(), y - image->getY0());
+         x <= xStop; ++i, ++x) {
+        *i = pixelOverlap(poly, x, y);
+    }
+}
+
 } // anonymous namespace
 
 
@@ -335,7 +362,6 @@ PTR(afw::image::Image<float>) CartesianPolygon::createImage(afw::geom::Box2I con
     typedef afw::image::Image<float> Image;
     PTR(Image) image = boost::make_shared<Image>(bbox);
     image->setXY0(bbox.getMin());
-    int x0 = bbox.getMinX(), y0 = bbox.getMinY();
     *image = 0.0;
     afw::geom::Box2D bounds = getBBox(); // Polygon bounds
     int xMin = std::max(static_cast<int>(bounds.getMinX()), bbox.getMinX());
@@ -343,11 +369,51 @@ PTR(afw::image::Image<float>) CartesianPolygon::createImage(afw::geom::Box2I con
     int yMin = std::max(static_cast<int>(bounds.getMinY()), bbox.getMinY());
     int yMax = std::min(static_cast<int>(::ceil(bounds.getMaxY())), bbox.getMaxY());
     for (int y = yMin; y <= yMax; ++y) {
+        double const yPixelMin = (double)y - 0.5, yPixelMax = (double)y + 0.5;
         BoostPolygon row;               // A polygon of row y
-        boost::geometry::assign(row, LsstBox(afw::geom::Point2D(xMin, y - 0.5),
-                                             afw::geom::Point2D(xMax, y + 0.5)));
+        boost::geometry::assign(row, LsstBox(afw::geom::Point2D(xMin, yPixelMin),
+                                             afw::geom::Point2D(xMax, yPixelMax)));
         std::vector<BoostPolygon> intersections;
         boost::geometry::intersection(_impl->poly, row, intersections);
+
+        if (intersections.size() == 1 && boost::geometry::num_points(intersections[0]) == 5) {
+            // This row is fairly tame, and should have a long run of pixels within the polygon
+            BoostPolygon const& row = intersections[0];
+            std::vector<double> top, bottom;
+            top.reserve(2);
+            bottom.reserve(2);
+            bool failed = false;
+            for (std::vector<Point>::const_iterator i = row.outer().begin();
+                 i != row.outer().end() - 1; ++i) {
+                double const xCoord = i->getX(), yCoord = i->getY();
+                if (yCoord == yPixelMin) {
+                    bottom.push_back(xCoord);
+                } else if (yCoord == yPixelMax) {
+                    top.push_back(xCoord);
+                } else {
+                    failed = true;
+                    break;
+                }
+            }
+            if (!failed && top.size() == 2 && bottom.size() == 2) {
+                std::sort(top.begin(), top.end());
+                std::sort(bottom.begin(), bottom.end());
+                int const xMin = std::min(top[0], bottom[0]);
+                int const xStart = ::ceil(std::max(top[0], bottom[0])) + 1;
+                int const xStop = std::min(top[1], bottom[1]) - 1;
+                int const xMax = ::ceil(std::max(top[1], bottom[1]));
+                pixelRowOverlap(image, _impl->poly, xMin, xStart, y);
+                int x = xStart;
+                for (Image::x_iterator i = image->x_at(xStart - image->getX0(), y - image->getY0());
+                     x <= xStop; ++i, ++x) {
+                    *i = 1.0;
+                }
+                pixelRowOverlap(image, _impl->poly, xStop, xMax, y);
+                continue;
+            }
+        }
+
+        // Last resort: do each pixel independently...
         for (typename std::vector<BoostPolygon>::const_iterator p = intersections.begin();
              p != intersections.end(); ++p) {
             double xMinRow = xMax, xMaxRow = xMin;
@@ -359,26 +425,40 @@ PTR(afw::image::Image<float>) CartesianPolygon::createImage(afw::geom::Box2I con
                 if (x > xMaxRow) xMaxRow = x;
             }
 
-            int x = xMinRow;
-            double xPixelMin = (double)x - 0.5, xPixelMax = (double)x + 0.5;
-            double yPixelMin = (double)y - 0.5, yPixelMax = (double)y + 0.5;
-            for (Image::x_iterator i = image->x_at(x - x0, y - y0); x <= ::ceil(xMaxRow);
-                 ++i, ++x, xPixelMin += 1.0, xPixelMax += 1.0) {
-                BoostPolygon pixel;     // Polygon for single pixel
-                boost::geometry::assign(pixel, LsstBox(afw::geom::Point2D(xPixelMin, yPixelMin),
-                                                       afw::geom::Point2D(xPixelMax, yPixelMax)));
-                std::vector<BoostPolygon> overlap; // Overlap between pixel and polygon
-                boost::geometry::intersection(_impl->poly, pixel, overlap);
-                double area = 0.0;
-                for (std::vector<BoostPolygon>::const_iterator j = overlap.begin(); j != overlap.end(); ++j) {
-                    area += boost::geometry::area(*j);
-                    assert(area <= 1.0); // by construction
-                }
-                *i = area;
-            }
+            pixelRowOverlap(image, _impl->poly, xMinRow, ::ceil(xMaxRow), y);
         }
     }
     return image;
 }
+
+double CartesianPolygon::dotProduct(
+    afw::image::MaskedImage<float, afw::image::MaskPixel> const& image,
+    afw::image::MaskPixel maskVal
+    ) const {
+    return _impl->dotProduct(image, maskVal);
+}
+double CartesianPolygon::dotProduct(CONST_PTR(afw::image::Image<float>) const& image) const
+{
+    typedef DummyMaskedImage<afw::image::Image<float>, DummyMask > MaskedImage;
+    MaskedImage dummy(image, boost::make_shared<DummyMask>(), image->getBBox(afw::image::PARENT));
+    return _impl->dotProduct(dummy);
+}
+double CartesianPolygon::dotProduct(
+    CONST_PTR(afw::image::Mask<afw::image::MaskPixel>) const& mask,
+    afw::image::MaskPixel maskVal
+    ) const
+{
+    typedef afw::image::Mask<afw::image::MaskPixel> Mask;
+    typedef DummyMaskedImage<DummyImage, Mask> MaskedImage;
+    MaskedImage dummy(boost::make_shared<DummyImage>(), mask, mask->getBBox(afw::image::PARENT));
+    return _impl->dotProduct(dummy, maskVal);
+}
+double CartesianPolygon::dotProduct(afw::geom::Box2I const& bbox) const
+{
+    typedef DummyMaskedImage<DummyImage, DummyMask> MaskedImage;
+    MaskedImage dummy(boost::make_shared<DummyImage>(), boost::make_shared<DummyMask>(), bbox);
+    return _impl->dotProduct(dummy);
+}
+
 
 }}} // namespace lsst::meas::algorithms
