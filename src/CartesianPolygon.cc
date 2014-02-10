@@ -139,6 +139,12 @@ struct CartesianPolygon::Impl
     template <class PolyT>
     std::vector<CartesianPolygon> intersection(PolyT const& other) const;
 
+    template <class PolyT>
+    CartesianPolygon unionSingle(PolyT const& other) const;
+
+    template <class PolyT>
+    std::vector<CartesianPolygon> union_(PolyT const& other) const;
+
     BoostPolygon poly;
 };
 
@@ -148,10 +154,10 @@ CartesianPolygon CartesianPolygon::Impl::intersectionSingle(PolyT const& other) 
     std::vector<BoostPolygon> result;
     boost::geometry::intersection(poly, other, result);
     if (result.size() == 0) {
-        throw LSST_EXCEPT(pex::exceptions::RuntimeErrorException, "Polygons have no intersection");
+        throw LSST_EXCEPT(pex::exceptions::LengthErrorException, "Polygons have no intersection");
     }
     if (result.size() > 1) {
-        throw LSST_EXCEPT(pex::exceptions::RuntimeErrorException,
+        throw LSST_EXCEPT(pex::exceptions::LengthErrorException,
                           (boost::format("Multiple polygons (%d) created by intersection()") %
                            result.size()).str());
     }
@@ -163,6 +169,33 @@ std::vector<CartesianPolygon> CartesianPolygon::Impl::intersection(PolyT const& 
 {
     std::vector<BoostPolygon> boostResult;
     boost::geometry::intersection(poly, other, boostResult);
+    std::vector<CartesianPolygon> lsstResult;
+    lsstResult.reserve(boostResult.size());
+    for (typename std::vector<BoostPolygon>::const_iterator i = boostResult.begin();
+         i != boostResult.end(); ++i) {
+        lsstResult.push_back(CartesianPolygon(PTR(Impl)(new Impl(*i))));
+    }
+    return lsstResult;
+}
+
+template <class PolyT>
+CartesianPolygon CartesianPolygon::Impl::unionSingle(PolyT const& other) const
+{
+    std::vector<BoostPolygon> result;
+    boost::geometry::union_(poly, other, result);
+    if (result.size() != 1) {
+        throw LSST_EXCEPT(pex::exceptions::LengthErrorException,
+                          (boost::format("Multiple polygons (%d) created by union_()") %
+                           result.size()).str());
+    }
+    return CartesianPolygon(PTR(Impl)(new Impl(result[0])));
+}
+
+template <class PolyT>
+std::vector<CartesianPolygon> CartesianPolygon::Impl::union_(PolyT const& other) const
+{
+    std::vector<BoostPolygon> boostResult;
+    boost::geometry::union_(poly, other, boostResult);
     std::vector<CartesianPolygon> lsstResult;
     lsstResult.reserve(boostResult.size());
     for (typename std::vector<BoostPolygon>::const_iterator i = boostResult.begin();
@@ -272,6 +305,22 @@ std::vector<CartesianPolygon> CartesianPolygon::intersection(CartesianPolygon co
 
 std::vector<CartesianPolygon> CartesianPolygon::intersection(Box const& box) const {
     return _impl->intersection(box);
+}
+
+CartesianPolygon CartesianPolygon::unionSingle(CartesianPolygon const& other) const {
+    return _impl->unionSingle(other._impl->poly);
+}
+
+CartesianPolygon CartesianPolygon::unionSingle(Box const& box) const {
+    return _impl->unionSingle(box);
+}
+
+std::vector<CartesianPolygon> CartesianPolygon::union_(CartesianPolygon const& other) const {
+    return _impl->union_(other._impl->poly);
+}
+
+std::vector<CartesianPolygon> CartesianPolygon::union_(Box const& box) const {
+    return _impl->union_(box);
 }
 
 CartesianPolygon CartesianPolygon::convexHull() const

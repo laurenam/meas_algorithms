@@ -120,6 +120,33 @@ public:
         return intersection(Box(box));
     }
 
+    /// Returns the union of two polygons
+    ///
+    /// Does not handle non-overlapping polygons, the union of which would be
+    /// disjoint.
+    CartesianPolygon unionSingle(CartesianPolygon const& other) const;
+    CartesianPolygon unionSingle(Box const& box) const;
+    CartesianPolygon unionSingle(afw::geom::Box2I const& box) const {
+        return unionSingle(Box(box));
+    }
+
+    /// Returns the union of two polygons
+    ///
+    /// Handles the full range of possibilities.
+    std::vector<CartesianPolygon> union_(CartesianPolygon const& other) const;
+    std::vector<CartesianPolygon> union_(Box const& box) const;
+    std::vector<CartesianPolygon> union_(afw::geom::Box2I const& box) const {
+        return union_(Box(box));
+    }
+
+    /// Operators for syntactic sugar
+    std::vector<CartesianPolygon> operator^(CartesianPolygon const& rhs) { return intersection(rhs); }
+    std::vector<CartesianPolygon> operator^(Box const& rhs) { return intersection(rhs); }
+    std::vector<CartesianPolygon> operator^(afw::geom::Box2I const& rhs) { return intersection(rhs); }
+    std::vector<CartesianPolygon> operator|(CartesianPolygon const& rhs) { return union_(rhs); }
+    std::vector<CartesianPolygon> operator|(Box const& rhs) { return union_(rhs); }
+    std::vector<CartesianPolygon> operator|(afw::geom::Box2I const& rhs) { return union_(rhs); }
+
     /// Produce a polygon from the convex hull
     CartesianPolygon convexHull() const;
 

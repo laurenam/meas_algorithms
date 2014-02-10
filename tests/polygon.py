@@ -26,6 +26,7 @@ import pickle
 import unittest
 import lsst.utils.tests as utilsTests
 
+import lsst.pex.exceptions as pexExcept
 import lsst.afw.geom as afwGeom
 import lsst.afw.image as afwImage
 import lsst.afw.coord as afwCoord
@@ -47,7 +48,7 @@ def circle(radius, num, x0=0.0, y0=0.0):
     y = radius*numpy.sin(theta) + y0
     return numpy.array([x, y]).transpose()
 
-class PolygonTest(unittest.TestCase):
+class PolygonTest(utilsTests.TestCase):
     def setUp(self):
         self.x0 = 0.0
         self.y0 = 0.0
@@ -159,19 +160,54 @@ class PolygonTest(unittest.TestCase):
         poly1 = self.square(2.0, -1.0, -1.0)
         poly2 = self.square(2.0, +1.0, +1.0)
         poly3 = self.square(1.0,  0.0,  0.0)
+        poly4 = self.square(1.0, +5.0, +5.0)
 
         # intersectionSingle: assumes there's a single intersection (convex polygons)
         self.assertEqual(poly1.intersectionSingle(poly2), poly3)
         self.assertEqual(poly2.intersectionSingle(poly1), poly3)
+        self.assertRaisesLsstCpp(pexExcept.LengthErrorException, poly1.intersectionSingle, poly4)
+        self.assertRaisesLsstCpp(pexExcept.LengthErrorException, poly4.intersectionSingle, poly1)
 
         # intersection: no assumptions
         polyList1 = poly1.intersection(poly2)
         polyList2 = poly2.intersection(poly1)
+        self.assertEqual(polyList1, polyList2)
         self.assertEqual(len(polyList1), 1)
-        self.assertEqual(len(polyList2), 1)
         self.assertEqual(polyList1[0], poly3)
-        self.assertEqual(polyList2[0], poly3)
-        self.assertEqual(polyList1[0], polyList2[0])
+        polyList3 = poly1.intersection(poly4)
+        polyList4 = poly4.intersection(poly1)
+        self.assertEqual(polyList3, polyList4)
+        self.assertEqual(len(polyList3), 0)
+
+    def testUnion(self):
+        """Test CartesianPolygon.union"""
+        poly1 = self.square(2.0, -1.0, -1.0)
+        poly2 = self.square(2.0, +1.0, +1.0)
+        poly3 = CartesianPolygon(VectorPoint([afwGeom.Point2D(x,y) for x,y in
+                                              ((-3.0, -3.0), (-3.0, +1.0), (-1.0, +1.0), (-1.0, +3.0),
+                                               (+3.0, +3.0), (+3.0, -1.0), (+1.0, -1.0), (+1.0, -3.0))]))
+        poly4 = self.square(1.0, +5.0, +5.0)
+
+        # unionSingle: assumes there's a single union (intersecting polygons)
+        self.assertEqual(poly1.unionSingle(poly2), poly3)
+        self.assertEqual(poly2.unionSingle(poly1), poly3)
+        self.assertRaisesLsstCpp(pexExcept.LengthErrorException, poly1.unionSingle, poly4)
+        self.assertRaisesLsstCpp(pexExcept.LengthErrorException, poly4.unionSingle, poly1)
+
+        # union: no assumptions
+        polyList1 = poly1.union(poly2)
+        polyList2 = poly2.union(poly1)
+        self.assertEqual(polyList1, polyList2)
+        self.assertEqual(len(polyList1), 1)
+        self.assertEqual(polyList1[0], poly3)
+        polyList3 = poly1.union(poly4)
+        polyList4 = poly4.union(poly1)
+        self.assertEqual(len(polyList3), 2)
+        self.assertEqual(len(polyList3), len(polyList4))
+        self.assertTrue((polyList3[0] == polyList4[0] and polyList3[1] == polyList4[1]) or
+                        (polyList3[0] == polyList4[1] and polyList3[1] == polyList4[0]))
+        self.assertTrue((polyList3[0] == poly1 and polyList3[1] == poly4) or
+                        (polyList3[0] == poly4 and polyList3[1] == poly1))
 
     def testImage(self):
         """Test CartesianPolygon.createImage"""
