@@ -85,6 +85,7 @@ class DiscreteBackgroundTest(unittest.TestCase):
 
         # Check coefficients
         solution = bg.getSolution()
+        print solution
         solRms = numpy.sqrt(numpy.average((solution - coeffs)**2))
         self.assertAlmostEqual(solRms, 0.0, 6)
 

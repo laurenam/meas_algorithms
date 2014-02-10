@@ -79,7 +79,12 @@ struct DiscreteBackground::Impl
         solve(exp.getMaskedImage(), maskVal);
     }
     Impl(MaskedImage const& image, PolygonVector const& _polygons, afw::image::MaskPixel maskVal)
-        : polygons(_polygons), solution(), bbox(image.getBBox(afw::image::PARENT)) {
+        : polygons(), solution(), bbox(image.getBBox(afw::image::PARENT)) {
+        for (PolygonVector::const_iterator i = _polygons.begin(); i != _polygons.end(); ++i) {
+            if (i->overlaps(bbox)) {
+                polygons.push_back(*i);
+            }
+        }
         solve(image, maskVal);
     }
     Impl(PolygonVector _polygons, Solution const& _solution, afw::geom::Box2I _bbox)
@@ -96,6 +101,7 @@ struct DiscreteBackground::Impl
     afw::geom::Box2I bbox;
 };
 
+//#define SOLVE_EXACT
 
 void DiscreteBackground::Impl::solve(MaskedImage const& mi, afw::image::MaskPixel const maskVal)
 {
@@ -115,19 +121,55 @@ void DiscreteBackground::Impl::solve(MaskedImage const& mi, afw::image::MaskPixe
     // XXX can do much faster dot products by making a subimage of where the polygon(s) are non-zero.
     for (size_t i = 0; i < num; ++i) {
         CartesianPolygon const iPoly = polygons[i];
+#ifdef SOLVE_EXACT
+        std::cerr << i << ": ";
         CONST_PTR(afw::image::Image<float>) const& iImage = iPoly.createImage(bbox);
         matrix[i][i] = dotProduct(iImage, iImage, mask, maskVal);
         vector[i] = dotProduct(image, iImage, mask, maskVal);
+#else
+        matrix[i][i] = iPoly.dotProduct(mask, maskVal);
+        vector[i] = iPoly.dotProduct(mi, maskVal);
+        if (std::isnan(vector[i])) {
+            vector[i] = 0.0;
+        }
+#endif
         for (size_t j = i; j < num; ++j) {
             CartesianPolygon const jPoly = polygons[j];
+#ifdef SOLVE_EXACT
+            std::cerr << j << " ";
             CONST_PTR(afw::image::Image<float>) const& jImage = jPoly.createImage(bbox);
             matrix[i][j] = matrix[j][i] = dotProduct(iImage, jImage, mask, maskVal);
+#else
+            std::vector<CartesianPolygon> const intersection = iPoly.intersection(jPoly);
+            double sum = 0.0;
+            for (std::vector<CartesianPolygon>::const_iterator k = intersection.begin();
+                 k != intersection.end(); ++k) {
+                sum += k->dotProduct(mask, maskVal);
+            }
+            matrix[i][j] = matrix[j][i] = sum;
+#endif
         }
+#ifdef SOLVE_EXACT
+        std::cerr << std::endl;
+#endif
     }
 
+    std::cout << matrix << std::endl;
+    std::cout << vector << std::endl;
+
     afw::math::LeastSquares solver = afw::math::LeastSquares::fromNormalEquations(matrix, vector);
-    Solution soln = solver.getSolution();
-    solution.swap(soln);
+    ndarray::Array<double, 1, 1> soln1 = ndarray::copy(solver.getSolution());
+
+    std::cout << soln1 << std::endl;
+#if 1
+    for (size_t i = 0; i < num; ++i) {
+        if (std::isnan(soln1[i])) {
+            soln1[i] = 0.0;
+        }
+    }
+#endif
+    Solution soln2 = ndarray::copy(soln1);
+    solution.swap(soln2);
 }
 
 DiscreteBackground::DiscreteBackground(Exposure const& exp,

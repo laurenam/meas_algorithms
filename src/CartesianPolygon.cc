@@ -111,6 +111,45 @@ void pixelRowOverlap(PTR(lsst::afw::image::Image<float>) const image,
     }
 }
 
+template <typename PixelT>
+struct DummyIterator {
+    DummyIterator(int _value) : value(_value) {}
+    PixelT operator*() const { return value; }
+    DummyIterator const& operator++() const { return *this; } // prefix increment
+    DummyIterator const& operator++(int) const { return *this; } // postfix increment
+    PixelT const value;
+};
+
+// Duck-typing an Image with value identically unity
+struct DummyImage {
+    typedef DummyIterator<float> x_iterator;
+    x_iterator x_at(int x, int y) const { return x_iterator(1.0); }
+};
+
+// Duck-typing a Mask with value identically zero
+struct DummyMask {
+    typedef DummyIterator<lsst::afw::image::MaskPixel> x_iterator;
+    x_iterator x_at(int x, int y) const { return x_iterator(0); }
+};
+
+// Duck-typing a MaskedImage
+template <typename ImageT, typename MaskT>
+struct DummyMaskedImage {
+    typedef MaskT Mask;
+    typedef ImageT Image;
+    DummyMaskedImage(CONST_PTR(ImageT) _image, CONST_PTR(MaskT) _mask, lsst::afw::geom::Box2I const& _bbox)
+        : image(_image), mask(_mask), bbox(_bbox) {}
+    CONST_PTR(Mask) getMask() const { return mask; }
+    CONST_PTR(Image) getImage() const { return image; }
+    lsst::afw::geom::Box2I const& getBBox(lsst::afw::image::ImageOrigin) const { return bbox; }
+    int getX0() const { return bbox.getMin().getX(); }
+    int getY0() const { return bbox.getMin().getY(); }
+    CONST_PTR(ImageT) const image;
+    CONST_PTR(MaskT) const mask;
+    lsst::afw::geom::Box2I const& bbox;
+};
+
+
 } // anonymous namespace
 
 
@@ -172,6 +211,9 @@ struct CartesianPolygon::Impl
     template <class PolyT>
     std::vector<CartesianPolygon> union_(PolyT const& other) const;
 
+    template <typename MaskedImage>
+    double dotProduct(MaskedImage const& image, afw::image::MaskPixel maskVal=0) const;
+
     BoostPolygon poly;
 };
 
@@ -230,6 +272,30 @@ std::vector<CartesianPolygon> CartesianPolygon::Impl::union_(PolyT const& other)
         lsstResult.push_back(CartesianPolygon(PTR(Impl)(new Impl(*i))));
     }
     return lsstResult;
+}
+
+template <typename MaskedImage>
+double CartesianPolygon::Impl::dotProduct(MaskedImage const& image,
+                                          afw::image::MaskPixel maskVal) const
+{
+    afw::geom::Box2D const polyBounds = boostBoxToLsst(boost::geometry::return_envelope<BoostBox>(poly));
+    afw::geom::Box2I const imageBounds = image.getBBox(afw::image::PARENT);
+    int const xMin = std::max(static_cast<int>(polyBounds.getMinX()), imageBounds.getMinX());
+    int const xMax = std::min(static_cast<int>(::ceil(polyBounds.getMaxX())), imageBounds.getMaxX());
+    int const yMin = std::max(static_cast<int>(polyBounds.getMinY()), imageBounds.getMinY());
+    int const yMax = std::min(static_cast<int>(::ceil(polyBounds.getMaxY())), imageBounds.getMaxY());
+    int const x0 = image.getX0(), y0 = image.getY0();
+    double sum = 0;
+    for (int y = yMin; y <= yMax; ++y) {
+        typename MaskedImage::Image::x_iterator i = image.getImage()->x_at(xMin - x0, y - y0);
+        typename MaskedImage::Mask::x_iterator m = image.getMask()->x_at(xMin - x0, y - y0);
+        for (int x = xMin; x <= xMax; ++x, ++i, ++m) {
+            if (!(*m & maskVal) && boost::geometry::within(LsstPoint(x, y), poly)) {
+                sum += *i;
+            }
+        }
+    }
+    return sum;
 }
 
 

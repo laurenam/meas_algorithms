@@ -34,6 +34,8 @@
 #include "lsst/afw/geom/Box.h"
 #include "lsst/afw/geom/Point.h"
 #include "lsst/afw/image/Wcs.h"
+#include "lsst/afw/image/Image.h"
+#include "lsst/afw/image/MaskedImage.h"
 
 namespace lsst { namespace meas { namespace algorithms {
 
@@ -162,6 +164,15 @@ public:
     PTR(afw::image::Image<float>) createImage(afw::geom::Extent2I const& extent) const {
         return createImage(afw::geom::Box2I(afw::geom::Point2I(0, 0), extent));
     }
+
+    /// Dot product of polygon (unity inside, zero outside) with image
+    double dotProduct(afw::image::MaskedImage<float, afw::image::MaskPixel> const& image,
+                      afw::image::MaskPixel maskVal) const;
+    double dotProduct(CONST_PTR(afw::image::Image<float>) const& image) const;
+    double dotProduct(CONST_PTR(afw::image::Mask<afw::image::MaskPixel>) const& mask=
+                          CONST_PTR(afw::image::Mask<afw::image::MaskPixel>)(),
+                      afw::image::MaskPixel maskVal=0) const;
+    double dotProduct(afw::geom::Box2I const& bbox) const;
 
 private:
     /// pImpl pattern to hide implementation
