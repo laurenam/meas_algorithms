@@ -54,3 +54,4 @@
 #include "lsst/meas/algorithms/FocalPlane.h"
 #include "lsst/meas/algorithms/BinnedWcs.h"
 #include "lsst/meas/algorithms/CoaddBoundedField.h"
+#include "lsst/meas/algorithms/SimpleShape.h"
