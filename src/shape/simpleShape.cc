@@ -41,9 +41,10 @@ using afw::geom::Span;
 
 Span clipSpan(Span const & span, afw::geom::Box2I const & box) {
     if (span.getY() < box.getMinY() || span.getY() > box.getMaxY()) return Span();
-    return Span(
-        span.getY(), std::max(span.getMinX(), box.getMinX()), std::min(span.getMaxX(), box.getMaxX())
-    );
+    return Span(span.getY(),
+                std::min(std::max(span.getMinX(), box.getMinX()), box.getMaxX()),
+                std::max(std::min(span.getMaxX(), box.getMaxX()), box.getMinX())
+        );
 }
 
 template <typename Function, typename Iterator>
