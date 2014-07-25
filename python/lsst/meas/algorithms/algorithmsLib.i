@@ -243,3 +243,4 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %include "lsst/meas/algorithms/BinnedWcs.h"
 
 %include "lsst/meas/algorithms/CoaddBoundedField.i"
+%include "lsst/meas/algorithms/CoaddApCorrMap.i"

@@ -29,5 +29,6 @@ tests/testImagePsf
 tests/testWarpedPsf
 tests/testLib.py
 tests/testLib_wrap.cc
+tests/CoaddApCorrMap.fits
 ups/*.cfgc
 python/lsst/meas/algorithms/version.py
