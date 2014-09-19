@@ -51,6 +51,7 @@ import lsst.afw.coord as afwCoord
 import lsst.pipe.base as pipeBase
 import lsst.afw.cameraGeom as cameraGeom
 import lsst.meas.algorithms as measAlg
+from lsst.afw.geom.polygon import Polygon
 
 try:
     type(verbose)
@@ -75,8 +76,11 @@ class CoaddApCorrMapTest(unittest.TestCase):
         # Non-overlapping
         num = 5
         inputBox = afwGeom.Box2I(afwGeom.Point2I(0, 0), afwGeom.Extent2I(10, 10))
+        validBox = afwGeom.Box2I(afwGeom.Point2I(0, 0), afwGeom.Extent2I(7, 7))
         pointList = []
+        pointListMask = []
         overlapping = []
+        polygons = []
         for i in range(num):
             value = numpy.array([[1]], dtype=float) # Constant with value = i+1
             apCorrMap = afwImage.ApCorrMap()
@@ -87,15 +91,21 @@ class CoaddApCorrMapTest(unittest.TestCase):
             wcs = afwImage.makeWcs(coord, point, scale, 0.0, 0.0, scale)
             center = afwGeom.Box2D(inputBox).getCenter()
             pointList.append(coaddWcs.skyToPixel(wcs.pixelToSky(center)))
+
+            # This point will only be valid for the second overlapping record
+            pointMask = center + afwGeom.Extent2D(4, 4)
+            pointListMask.append(coaddWcs.skyToPixel(wcs.pixelToSky(pointMask)))
+
             record = catalog.getTable().makeRecord()
             record.setWcs(wcs)
             record.setBBox(inputBox)
             record.setApCorrMap(apCorrMap)
             record.set(weightKey, i + 1)
             record['id'] = i
+            record.setValidPolygon(Polygon(afwGeom.Box2D(validBox)))
             catalog.append(record)
 
-            # An overlapping record
+            # An overlapping record with the region as valid
             record = catalog.getTable().makeRecord()
             record.setWcs(wcs)
             record.setBBox(inputBox)
@@ -105,10 +115,12 @@ class CoaddApCorrMapTest(unittest.TestCase):
             record.setApCorrMap(apCorrMap)
             record.set(weightKey, i + 2)
             record['id'] = i + num
+            record.setValidPolygon(Polygon(afwGeom.Box2D(inputBox)))
             catalog.append(record)
 
         apCorrMap = measAlg.makeCoaddApCorrMap(catalog, coaddBox, coaddWcs, "customweightname")
         self.assertApCorrMap(apCorrMap, pointList)
+        self.assertApCorrMapMask(apCorrMap, pointListMask)
 
         filename = "tests/coaddApCorrMap.fits"
         exposure = afwImage.ExposureF(1, 1)
@@ -116,6 +128,7 @@ class CoaddApCorrMapTest(unittest.TestCase):
         exposure.writeFits(filename)
         exposure = afwImage.ExposureF(filename)
         self.assertApCorrMap(exposure.getInfo().getApCorrMap(), pointList)
+        self.assertApCorrMapMask(exposure.getInfo().getApCorrMap(), pointListMask)
         os.unlink(filename)
 
     def assertApCorrMap(self, apCorrMap, pointList):
@@ -125,6 +138,16 @@ class CoaddApCorrMapTest(unittest.TestCase):
             expected = sum((w*v for w,v in zip(weights, values)), 0.0) / sum(weights)
             actual = apCorrMap["only"].evaluate(point)
             self.assertEqual(actual, expected)
+
+    def assertApCorrMapMask(self, apCorrMap, pointList):
+        for i, point in enumerate(pointList):
+            weights = [i+2]
+            values = [i+2]
+            expected = sum((w*v for w,v in zip(weights, values)), 0.0) / sum(weights)
+            actual = apCorrMap["only"].evaluate(point)
+            self.assertEqual(actual, expected)
+
+            
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 

@@ -7,6 +7,7 @@ def makeCoaddApCorrMap(catalog, coaddBox, coaddWcs, weightFieldName="weight"):
     """Construct an ApCorrMap for a coadd
 
     @param catalog: Table of coadd inputs (lsst.afw.table.ExposureCatalog)
+    @param polygons: Array of Polygons that define valid regions
     @param coaddBox: Bounding box for coadd (lsst.afw.geom.Box2I)
     @param coaddWcs: Wcs for coadd
     @param weightFieldName: name of weight field in catalog
@@ -22,10 +23,11 @@ def makeCoaddApCorrMap(catalog, coaddBox, coaddWcs, weightFieldName="weight"):
             continue
         weight = row.get(weightKey)
         wcs = row.getWcs()
+        validPolygon = row.getValidPolygon()
         for name, bf in apCorrMap.items():
             if not name in everything:
                 everything[name] = []
-            everything[name].append(CoaddBoundedFieldElement(bf, wcs, weight))
+            everything[name].append(CoaddBoundedFieldElement(bf, wcs, validPolygon, weight))
 
     # Construct a CoaddBoundedField for each type
     apCorrMap = ApCorrMap()
