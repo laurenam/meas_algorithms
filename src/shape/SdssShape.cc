@@ -459,9 +459,9 @@ bool getAdaptiveMoments(ImageT const& mimage, double bkgd, double xcen, double y
                         detail::SdssShapeImpl *shape, int maxIter, float tol1, float tol2, bool negative)
 {
     double I0 = 0;                      // amplitude of best-fit Gaussian
-    double sum;                         // sum of intensity*weight
+    double sum = 0;                     // sum of intensity*weight
     double sumx, sumy;                  // sum ((int)[xy])*intensity*weight
-    double sumxx, sumxy, sumyy;         // sum {x^2,xy,y^2}*intensity*weight
+    double sumxx = 0.0, sumxy = 0.0, sumyy = 0.0; // sum {x^2,xy,y^2}*intensity*weight
     double sums4;                       // sum intensity*weight*exponent^2
     float const xcen0 = xcen;           // initial centre
     float const ycen0 = ycen;           //                of object
