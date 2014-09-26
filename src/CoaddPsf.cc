@@ -216,7 +216,7 @@ PTR(afw::detection::Psf::Image) CoaddPsf::doComputeKernelImage(
     afw::geom::Point2D const & ccdXY,
     afw::image::Color const & color
 ) const {
-    // get the subset of exposures which contain our coordinate and are inside the the mask
+    // get the subset of exposures which contain our coordinate and are inside the the validPolygonx
     afw::table::ExposureCatalog subcat = _catalog.subsetContaining(ccdXY, *_coaddWcs, true);
     if (subcat.empty()) {
         throw LSST_EXCEPT(

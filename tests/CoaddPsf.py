@@ -104,9 +104,9 @@ def makeBiaxialGaussianPsf(sizex, sizey, sigma1, sigma2, theta):
 # This is a mock method for coadding the moments of the component Psfs at a point
 # Check that the coaddpsf passed in is really using the correct components and weighting them properly
 # The components in this case are all single gaussians, and we will just add the moments
-# If UseMask = True then the exposures are expected to have validPolygons defined, otherwise
+# If useValidPolygon = True then the exposures are expected to have validPolygons defined, otherwise
 # it will set the whoe region as valid
-def getCoaddSecondMoments(coaddpsf, point, useMask=False):
+def getCoaddSecondMoments(coaddpsf, point, useValidPolygon=False):
     count = coaddpsf.getComponentCount()
     coaddWcs = coaddpsf.getCoaddWcs()
     weight_sum = 0.0
@@ -117,13 +117,13 @@ def getCoaddSecondMoments(coaddpsf, point, useMask=False):
         wcs = coaddpsf.getWcs(i)
         psf = coaddpsf.getPsf(i)
         bbox = afwGeom.Box2D(coaddpsf.getBBox(i))
-        if useMask:
-            mask = coaddpsf.getValidPolygon(i)
+        if useValidPolygon:
+            validPolygon = coaddpsf.getValidPolygon(i)
         else:
-            mask=Polygon(bbox)
+            validPolygon = Polygon(bbox)
 
         point_rel = wcs.skyToPixel(coaddWcs.pixelToSky(afwGeom.Point2D(point)))
-        if bbox.contains(point_rel) and mask.contains(point_rel):
+        if bbox.contains(point_rel) and validPolygon.contains(point_rel):
             weight = coaddpsf.getWeight(i)
             m0,xbar,ybar,mxx,myy,x0,y0 = getPsfMoments(psf, point) #, extent)
             m1_sum += mxx*weight
@@ -498,9 +498,9 @@ class CoaddPsfTest(unittest.TestCase):
         # important test is that this doesn't throw:
         coaddPsf.computeKernelImage()
 
-    def testMaskPsf(self):
-        """Test that we can mask exposures in the coadd psf"""
-        print "MaskTest"
+    def testValidPolygonPsf(self):
+        """Test that we can use the validPolygon on exposures in the coadd psf"""
+        print "ValidPolygonTest"
         # this is the coadd Wcs we want
         cd11 = 5.55555555e-05
         cd12 = 0.0
@@ -529,12 +529,12 @@ class CoaddPsfTest(unittest.TestCase):
             record['id'] = i
             bbox = afwGeom.Box2I(afwGeom.Point2I(0,0), afwGeom.Extent2I(1000, 1000))
             record.setBBox(bbox)
-            mask_bbox = afwGeom.Box2D(afwGeom.Point2D(0,0), afwGeom.Extent2D(i*100, i*100))
-            mask = Polygon(mask_bbox)
-            record.setValidPolygon(mask)
+            validPolygon_bbox = afwGeom.Box2D(afwGeom.Point2D(0,0), afwGeom.Extent2D(i*100, i*100))
+            validPolygon = Polygon(validPolygon_bbox)
+            record.setValidPolygon(validPolygon)
             mycatalog.append(record)
 
-        # Create the coaddpsf and check at three different points to ensure that masking is working
+        # Create the coaddpsf and check at three different points to ensure that the validPolygon is working
         mypsf = measAlg.CoaddPsf(mycatalog, wcsref, 'weight')
         m1coadd,m2coadd = getCoaddSecondMoments(mypsf, afwGeom.Point2D(50,50),True)
         m1,m2 = getPsfSecondMoments(mypsf, afwGeom.Point2D(50,50))
