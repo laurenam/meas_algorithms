@@ -162,6 +162,8 @@ class SourceDetectionConfig(pexConfig.Config):
         dtype=BackgroundConfig,
         doc="Background re-estimation configuration"
         )
+    shrinkMask = pexConfig.ListField(dtype=str, default=["NO_DATA"],
+                                     doc="List of mask bits for shrinking footprints")
 
 
 def _getBackgroundImage(backgroundConfig, backgroundObj):
@@ -330,6 +332,17 @@ class SourceDetectionTask(pipeBase.Task):
                 nGrow = int((self.config.nSigmaToGrow * sigma) + 0.5)
                 self.metadata.set("nGrow", nGrow)
                 fpSet = afwDet.FootprintSet(fpSet, nGrow, False)
+
+            # Shrink and split footprints
+            # This would be equivalent to respecting the mask when doing detection, except for the grow,
+            # as shrinking only respects the mask on the edge of the footprint.
+            splits = afwDet.FootprintList()
+            for fp in fpSet.getFootprints():
+                fp.shrink(maskedImage.getMask(), maskedImage.getMask().getPlaneBitMask(self.config.shrinkMask))
+                for f in fp.splitNoncontiguous():
+                    splits.push_back(f)
+            fpSet.setFootprints(splits)
+
             fpSet.setMask(maskedImage.getMask(), maskName)
             if not self.config.returnOriginalFootprints:
                 setattr(fpSets, polarity, fpSet)
