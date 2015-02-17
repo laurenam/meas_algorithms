@@ -346,7 +346,7 @@ class SourceDetectionTask(pipeBase.Task):
                             splits.push_back(f)
                 fpSet.setFootprints(splits)
                 self.log.info("Shrunk and split %d original %s footprints to %d" %
-                              (polarity, originalSize, len(fpSet.getFootprints())))
+                              (originalSize, polarity, len(fpSet.getFootprints())))
 
             fpSet.setMask(maskedImage.getMask(), maskName)
             if not self.config.returnOriginalFootprints:
