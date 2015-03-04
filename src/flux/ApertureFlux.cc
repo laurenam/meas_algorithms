@@ -227,6 +227,7 @@ void ApertureFlux::_apply(
                 source.set(_errKey[i], flux.second);
             }
         }
+        source.set(_nProfileKey, i);
     } catch (...) {
         source.set(_nProfileKey, i);
         throw;
