@@ -177,7 +177,7 @@ class PcaPsfDeterminer(object):
                     raise
 
                 if nEigen == 1:         # can't go any lower
-                    raise
+                    raise IndexError("No viable PSF candidates survive")
                     
                 msg = e.message.what().strip().split("\n")[-1] # message from exception
                 msg = msg.split(":")[-1].strip()               # remove "0: Message: " prefix
@@ -241,6 +241,9 @@ class PcaPsfDeterminer(object):
         psfCellSet = afwMath.SpatialCellSet(bbox, self.config.sizeCellX, self.config.sizeCellY)
         sizes = numpy.ndarray(len(psfCandidateList))
         for i, psfCandidate in enumerate(psfCandidateList):
+            if psfCandidate.getSource().getPsfFluxFlag(): # bad measurement
+                continue
+
             try:
                 psfCellSet.insertCandidate(psfCandidate)
             except Exception, e:
