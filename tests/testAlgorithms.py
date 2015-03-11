@@ -48,7 +48,6 @@ except NameError:
 class AlgorithmsTestCase(unittest.TestCase):
     """A test case for centroiding"""
 
-    @utilsTests.debugger(pexEx.LsstCppException, Exception, AssertionError)
     def testAlgorithms(self):
         """Test that we can instantiate and use algorithms"""
 
