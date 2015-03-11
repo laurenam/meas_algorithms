@@ -412,9 +412,13 @@ class SpatialModelPsfTestCase(unittest.TestCase):
         psfDeterminer = factory(config)
 
         schema = afwTable.SourceTable.makeMinimalSchema()
-        posKey = schema.addField("position", afwGeom.Point2D, doc="Position")
+        schema.addField("position", afwGeom.Point2D, doc="Position")
+        schema.addField("flux.psf", float, doc="psf")
+        schema.addField("flux.psf.flags", "Flag", doc="psf")
+
         catalog = afwTable.SourceCatalog(schema)
-        catalog.defineCentroid(posKey)
+        catalog.defineCentroid("position")
+        catalog.definePsfFlux("flux.psf")
         source = catalog.addNew()
 
         foot = afwDetection.Footprint(afwGeom.Point2I(123, 45), 6, self.exposure.getBBox())
