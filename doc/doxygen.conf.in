@@ -1,3 +1,8 @@
 EXCLUDE += src/Measure.cc
 EXCLUDE += src/SingleGaussianPsf.cc
 EXCLUDE += src/PcaPsf.cc
+
+EXAMPLE_PATH = examples
+IMAGE_PATH = doc
+
+HTML_EXTRA_FILES = doc/extraFiles/curveOfGrowth.pdf
