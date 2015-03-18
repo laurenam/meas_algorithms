@@ -69,13 +69,12 @@ ApertureFluxControl::ApertureFluxControl(std::string const& name, ///< name of a
         radius *= fac;
     }
 }
+
+typedef afw::image::Mask<afw::image::MaskPixel> Mask;
+
 //
 // Functor to measure the flux within a Footprint
 //
-namespace {
-    typedef afw::image::Mask<afw::image::MaskPixel> Mask;
-}
-
 template <typename ImageT>
 class FootprintFluxBase : public afwDet::FootprintFunctor<ImageT> {
 public:
