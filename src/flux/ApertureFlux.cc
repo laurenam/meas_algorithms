@@ -58,13 +58,13 @@ ApertureFluxControl::ApertureFluxControl(std::string const& name, ///< name of a
                                          float const priority     ///< priority (smaller => higher)
                        )
     : AlgorithmControl(name, priority),
-      maxSincRadius(10.0)
+      maxSincRadius(10.0), nApertureMax(10)
+
 {
-    int const nPoint = 10;
-    radii.reserve(nPoint);
+    radii.reserve(nApertureMax);
     double radius = 1.0;                // initial radius
     double const fac = 1.25/0.8;        // factor by which each radius in increased
-    for (int i = 0; i != nPoint; ++i) {
+    for (int i = 0; i != nApertureMax; ++i) {
         radii.push_back(radius);
         radius *= fac;
     }

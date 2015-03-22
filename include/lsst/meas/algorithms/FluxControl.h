@@ -120,6 +120,8 @@ public:
         "Largest aperture for which to use the slow, accurate, sinc aperture code"
     );
 
+    LSST_CONTROL_FIELD(nApertureMax, int, "Maximum number of radial annuli to measure");
+    
     ApertureFluxControl(std::string const& name="flux.aperture", ///< name of algorith,
                         float const priority=2.0                 ///< priority (smaller => higher)
                        );
