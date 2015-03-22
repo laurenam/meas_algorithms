@@ -50,6 +50,7 @@ public:
         CR_CENTER,
         SUSPECT,
         SUSPECT_CENTER,
+        CLIPPED,
         N_FLAGS
     };
 
@@ -104,6 +105,13 @@ PixelFlagAlgorithm::PixelFlagAlgorithm(PixelFlagControl const & ctrl, afw::table
     _keys[SUSPECT_CENTER] = schema.addField<afw::table::Flag>(
         ctrl.name + ".suspect.center", "source's center is close to suspect pixels"
     );
+
+    try {
+        afw::image::Exposure<lsst::afw::image::MaskPixel>::MaskedImageT::Mask::getPlaneBitMask("CLIPPED");
+        _keys[CLIPPED] = schema.addField<afw::table::Flag>(
+            ctrl.name + ".clipped.any", "source's footprint includes clipped pixels"
+            );
+    } catch (pex::exceptions::InvalidParameterException &) {}
 }
 
 template <typename PixelT>
@@ -145,6 +153,11 @@ void PixelFlagAlgorithm::_apply(
         if (func.getBits() & MaskedImageT::Mask::getPlaneBitMask("CR")) {
             source.set(_keys[CR], true);
         }
+        try {
+            if (func.getBits() & MaskedImageT::Mask::getPlaneBitMask("CLIPPED")) {
+                source.set(_keys[CLIPPED], true);
+            }
+        } catch (pex::exceptions::InvalidParameterException &) {}
     }
 
     // Check for bits set in the 3x3 box around the center
