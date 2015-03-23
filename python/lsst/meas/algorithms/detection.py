@@ -29,7 +29,6 @@ import lsst.afw.math as afwMath
 import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 import lsst.afw.geom as afwGeom
-import lsst.afw.geom.ellipses as afwEll
 import lsst.afw.detection as afwDet
 import lsst.pipe.base as pipeBase
 
@@ -163,19 +162,6 @@ class SourceDetectionConfig(pexConfig.Config):
         dtype=BackgroundConfig,
         doc="Background re-estimation configuration"
         )
-    doRemoveLargeFootprints = pexConfig.Field(dtype=bool, default=True,
-                                              doc="Remove large footprints after detection?")
-    maxFootprintArea = pexConfig.Field(dtype=int, default=100000,
-                                       doc=("Maximum area for footprints before they are removed as large; "
-                                            "non-positive means no threshold applied"))
-    maxFootprintSize = pexConfig.Field(dtype=int, default=1000,
-                                       doc=("Maximum linear dimension for footprints before they are removed "
-                                            "as large; non-positive means no threshold applied"))
-    minFootprintAxisRatio = pexConfig.Field(dtype=float, default=1.0e-2,
-                                            doc=("Minimum axis ratio for footprints before they are removed "
-                                                 "as large; non-positive means no threshold applied"))
-    largeFootprintMask = pexConfig.Field(dtype=str, default="NO_DATA",
-                                         doc="Mask bit applied for large footprints")
 
 
 def _getBackgroundImage(backgroundConfig, backgroundObj):
@@ -348,11 +334,6 @@ class SourceDetectionTask(pipeBase.Task):
             if not self.config.returnOriginalFootprints:
                 setattr(fpSets, polarity, fpSet)
 
-        if self.config.doRemoveLargeFootprints:
-            fpSets.positive = self.removeLargeFootprints(maskedImage, fpSets.positive, "positive")
-            if fpSets.negative:
-                fpSets.negative = self.removeLargeFootprints(maskedImage, fpSets.negative, "negative")
-
         fpSets.numPos = len(fpSets.positive.getFootprints()) if fpSets.positive is not None else 0
         fpSets.numNeg = len(fpSets.negative.getFootprints()) if fpSets.negative is not None else 0
 
@@ -442,72 +423,6 @@ class SourceDetectionTask(pipeBase.Task):
             edgeMask = msk.Factory(msk, afwGeom.BoxI(afwGeom.PointI(x0, y0),
                                                      afwGeom.ExtentI(w, h)), afwImage.LOCAL)
             edgeMask |= edgeBitmask
-
-
-    def removeLargeFootprints(self, maskedImage, fpSet, description):
-        """Returns a new FootprintSet containing the non-large footprints.
-
-        'Large' is defined by thresholds on the area, size and axis ratio.
-        These may be disabled independently by configuring them to be non-positive.
-
-        This is principally intended to get rid of satellite streaks, which downstream
-        processing (in particular, the deblender) have trouble dealing with.
-
-        The `description` should be an adjective that describes the FootprintSet being
-        processed, for the log.
-        """
-        maxArea = self.config.maxFootprintArea
-        maxSize = self.config.maxFootprintSize
-        minAxisRatio = self.config.minFootprintAxisRatio
-        maskVal = maskedImage.getMask().getPlaneBitMask(self.config.largeFootprintMask)
-
-        def isLargeFootprint(fp):
-            """Return whether the footprint is large"""
-            if maxArea > 0 and fp.getArea() > maxArea:
-                return True
-            bbox = fp.getBBox()
-            axes = afwEll.Axes(fp.getShape())
-            if maxSize > 0:
-                if bbox.getWidth() > maxSize or bbox.getHeight() > maxSize:
-                    return True
-                if axes.getA() > maxSize:
-                    return True
-            if minAxisRatio > 0 and axes.getB() < minAxisRatio*axes.getA():
-                return True
-            return False
-
-        bad = afwImage.ImageI(maskedImage.getBBox(afwImage.PARENT))
-        bad.set(0)
-        out = afwDet.FootprintSet(fpSet.getRegion())
-        numLargeFp = 0
-        for fp in fpSet.getFootprints():
-            if isLargeFootprint(fp):
-                afwDet.setMaskFromFootprint(maskedImage.getMask(), fp, maskVal)
-                afwDet.setImageFromFootprint(bad, fp, 1)
-                numLargeFp += 1
-            else:
-                out.getFootprints().push_back(fp)
-
-        numBadPixels = (bad.getArray() > 0).sum()
-        self._replacePixels(maskedImage, bad, (numLargeFp, numBadPixels))
-
-        if numLargeFp > 0:
-            self.log.info("Masked and replaced %d large %s footprints with %d pixels" %
-                          (numLargeFp, description, numBadPixels))
-        return out
-
-    def _replacePixels(self, maskedImage, bad, seed):
-        """Replace pixels in maskedImage with noise
-
-        Pixels that are non-zero in the 'bad' image are replaced in the
-        'maskedImage', with Gaussian noise (using the known variance
-        and the provided 'seed' for the RNG).
-        """
-        isBad = bad.getArray() > 0
-        stdev = numpy.sqrt(maskedImage.getVariance().getArray()[isBad])
-        rng = numpy.random.RandomState(seed)
-        maskedImage.getImage().getArray()[isBad] = rng.normal(0.0, 1.0, isBad.sum())*stdev
-
 
 def addExposures(exposureList):
     """
