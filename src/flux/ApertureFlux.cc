@@ -58,41 +58,38 @@ ApertureFluxControl::ApertureFluxControl(std::string const& name, ///< name of a
                                          float const priority     ///< priority (smaller => higher)
                        )
     : AlgorithmControl(name, priority),
-      maxSincRadius(10.0)
+      maxSincRadius(10.0), nApertureMax(10)
+
 {
-    int const nPoint = 10;
-    radii.reserve(nPoint);
+    radii.reserve(nApertureMax);
     double radius = 1.0;                // initial radius
     double const fac = 1.25/0.8;        // factor by which each radius in increased
-    for (int i = 0; i != nPoint; ++i) {
+    for (int i = 0; i != nApertureMax; ++i) {
         radii.push_back(radius);
         radius *= fac;
     }
 }
 
-template <typename MaskedImageT>
-class FootprintFlux : public afwDet::FootprintFunctor<MaskedImageT> {
+typedef afw::image::Mask<afw::image::MaskPixel> Mask;
+
+//
+// Functor to measure the flux within a Footprint
+//
+template <typename ImageT>
+class FootprintFluxBase : public afwDet::FootprintFunctor<ImageT> {
 public:
-    explicit FootprintFlux(MaskedImageT const& mimage ///< The image the source lives in
-                 ) : afwDet::FootprintFunctor<MaskedImageT>(mimage),
-                     _sum(0.0), _sumVar(0.0) {}
+    explicit FootprintFluxBase(ImageT const& mimage ///< The image the source lives in
+                 ) : afwDet::FootprintFunctor<ImageT>(mimage),
+                     _sum(0.0), _sumVar(0.0), _nInterpolatedPixel(0),
+                     _INTRP(Mask::getPlaneBitMask("INTRP"))        
+    {}
 
     /// @brief Reset everything for a new Footprint
     void reset() {
         _sum = _sumVar = 0.0;
+        _nInterpolatedPixel = 0;
     }
     void reset(afwDet::Footprint const&) {}        
-
-    /// @brief method called for each pixel by apply()
-    void operator()(typename MaskedImageT::xy_locator loc, ///< locator pointing at the pixel
-                    int,                                   ///< column-position of pixel
-                    int                                    ///< row-position of pixel
-                   ) {
-        typename MaskedImageT::Image::Pixel ival = loc.image(0, 0);
-        typename MaskedImageT::Variance::Pixel vval = loc.variance(0, 0);
-        _sum += ival;
-        _sumVar += vval;
-    }
 
     /// Return the Footprint's flux
     double getSum() const { return _sum; }
@@ -100,9 +97,62 @@ public:
     /// Return the variance of the Footprint's flux
     double getSumVar() const { return _sumVar; }
 
-private:
+    /// Return the variance of the Footprint's flux
+    int getNInterpolatedPixel() const { return _nInterpolatedPixel; }
+
+protected:
     double _sum;
     double _sumVar;
+    int _nInterpolatedPixel;
+    const int _INTRP;                                 // the bitmask for interpolated pixels
+};
+//
+// Implementation for MaskedImages
+//
+template <typename MaskedImageT>
+class FootprintFlux : public FootprintFluxBase<MaskedImageT> {
+public:
+    explicit FootprintFlux(MaskedImageT const& mimage ///< The image the source lives in
+                 ) : FootprintFluxBase<MaskedImageT>(mimage)
+    {}
+
+    /// @brief method called for each pixel by apply()
+    void operator()(typename MaskedImageT::xy_locator loc, ///< locator pointing at the pixel
+                    int,                                   ///< column-position of pixel
+                    int                                    ///< row-position of pixel
+                   ) {
+        typename MaskedImageT::Image::Pixel ival = loc.image(0, 0);
+        typename MaskedImageT::Mask::Pixel mval =  loc.mask(0, 0);
+        typename MaskedImageT::Variance::Pixel vval = loc.variance(0, 0);
+        this->_sum += ival;
+        this->_sumVar += vval;
+
+        if (mval & this->_INTRP) {
+            ++this->_nInterpolatedPixel;
+        }
+    }
+};
+//
+// Implementation for Mask alone
+//
+template<>
+class FootprintFlux<Mask> : public FootprintFluxBase<Mask> {
+public:
+    explicit FootprintFlux(Mask const& mimage ///< The image the source lives in
+                 ) : FootprintFluxBase<Mask>(mimage)
+    {}
+
+    /// @brief method called for each pixel by apply()
+    void operator()(typename Mask::xy_locator loc, ///< locator pointing at the pixel
+                    int,                                   ///< column-position of pixel
+                    int                                    ///< row-position of pixel
+                   ) {
+        Mask::Pixel mval =  loc(0, 0);
+
+        if (mval & this->_INTRP) {
+            ++this->_nInterpolatedPixel;
+        }
+    }
 };
 
 template <typename MaskedImageT, typename WeightImageT>
@@ -112,11 +162,14 @@ public:
                         PTR(WeightImageT const) wimage    ///< The weight image
                        ) : afwDet::FootprintFunctor<MaskedImageT>(mimage),
                            _wimage(wimage),
-                           _sum(0.0), _sumVar(0.0), _x0(0), _y0(0) {}
+                           _sum(0.0), _sumVar(0.0),
+                           _nInterpolatedPixel(0), _INTRP(MaskedImageT::Mask::getPlaneBitMask("INTRP")),
+                           _x0(0), _y0(0) {}
     
     /// @brief Reset everything for a new Footprint
     void reset(afwDet::Footprint const& foot) {
         _sum = _sumVar = 0.0;
+        _nInterpolatedPixel = 0;
         
         afw::geom::BoxI const& bbox(foot.getBBox());
         _x0 = bbox.getMinX();
@@ -138,21 +191,30 @@ public:
                     int y                                  ///< row-position of pixel
                    ) {
         typename MaskedImageT::Image::Pixel ival = iloc.image(0, 0);
+        typename MaskedImageT::Mask::Pixel mval = iloc.mask(0, 0);
         typename MaskedImageT::Variance::Pixel vval = iloc.variance(0, 0);
         typename WeightImageT::Pixel wval = (*_wimage)(x - _x0, y - _y0);
         _sum += wval*ival;
         _sumVar += wval*wval*vval;
+
+        if (mval & _INTRP) {
+            _nInterpolatedPixel += wval;
+        }
     }
 
     /// Return the Footprint's flux
     double getSum() const { return _sum; }
     /// Return the variance in the Footprint's flux
     double getSumVar() const { return _sumVar; }
+    /// Return the variance of the Footprint's flux
+    float getNInterpolatedPixel() const { return _nInterpolatedPixel; }
 
 private:
     PTR(WeightImageT const) _wimage;        // The weight image
     double _sum;                                      // our desired sum
     double _sumVar;                                   // The variance of our desired sum
+    float _nInterpolatedPixel;                        // weighted number of interpolated pixels
+    const int _INTRP;                                 // the bitmask for interpolated pixels
     int _x0, _y0;                                     // the origin of the current Footprint
 };
 
@@ -216,15 +278,20 @@ void ApertureFlux::_apply(
                 fluxFunctor.apply(foot);
                 source.set(_fluxKey[i], fluxFunctor.getSum());
                 source.set(_errKey[i], ::sqrt(fluxFunctor.getSumVar()));
+                source.set(_nInterpolatedPixelKey[i], fluxFunctor.getNInterpolatedPixel());
             } else {
+                afw::geom::ellipses::Ellipse disk(afw::geom::ellipses::Axes(radii[i], radii[i], 0.0), center);
+
                 std::pair<double, double> flux =
-                    algorithms::photometry::calculateSincApertureFlux(
-                        mimage,
-                        afw::geom::ellipses::Ellipse(afw::geom::ellipses::Axes(radii[i], radii[i], 0.0), center),
-                        0.0
-                    );
+                    algorithms::photometry::calculateSincApertureFlux(mimage, disk, 0.0);
+                // Now count the interpolated pixels
+                FootprintFlux<typename MaskedImageT::Mask> fluxFunctor(*mimage.getMask());
+                afwDet::Footprint const foot(afw::geom::PointI(ixcen, iycen), radii[i], imageBBox);
+                fluxFunctor.apply(foot);
+
                 source.set(_fluxKey[i], flux.first);
                 source.set(_errKey[i], flux.second);
+                source.set(_nInterpolatedPixelKey[i], fluxFunctor.getNInterpolatedPixel());
             }
         }
         source.set(_nProfileKey, i);

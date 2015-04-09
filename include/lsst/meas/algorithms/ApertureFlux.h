@@ -46,6 +46,9 @@ public:
                 ctrl.name, "sum of pixels in apertures", "dn", ctrl.radii.size())),
         _errKey(schema.addField< afw::table::Array<double> >(
                 ctrl.name + ".err", "uncertainty for " + ctrl.name, "dn", ctrl.radii.size())),
+        _nInterpolatedPixelKey(schema.addField< afw::table::Array<int> >(
+                ctrl.name + ".nInterpolatedPixel", "Number of interpolated pixels in the aperture", "int",
+                ctrl.radii.size())),
         _nProfileKey(schema.addField<int>(ctrl.name + ".nProfile", "pixels",
                                           "Number of points in radial profile successfully measured")),
         _flagKey(schema.addField<afw::table::Flag>(ctrl.name + ".flags", "success flag for " + ctrl.name))
@@ -55,6 +58,7 @@ public:
 protected:
     afw::table::Key< afw::table::Array<double> > _fluxKey;
     afw::table::Key< afw::table::Array<double> > _errKey;
+    afw::table::Key< afw::table::Array<int> > _nInterpolatedPixelKey;
     afw::table::Key<int> _nProfileKey;
     afw::table::Key< afw::table::Flag > _flagKey;
 

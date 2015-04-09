@@ -32,6 +32,7 @@ from .replaceWithNoise import *
 from .measureApCorr import *
 from . import objectSizeStarSelector  # don't need names, just registration
 from .makeCoaddApCorrMap import *
+from .measureCurveOfGrowth import *
 
 from .version import *
 
