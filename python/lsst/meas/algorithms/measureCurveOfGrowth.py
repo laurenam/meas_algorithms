@@ -932,5 +932,5 @@ class SingleProfile(object):
         self.psfFlux = source.getPsfFlux()
         self.alpha, self.alphaErr = None, None
 
-        if self.npoint <= self.i0 + 1:   # no new information (1 point's useless)
+        if self.i0 is None or self.npoint <= self.i0 + 1:   # no new information (1 point's useless)
             raise IndexError("Source %d has <= 1 valid aperture measurement" % source.getId())
