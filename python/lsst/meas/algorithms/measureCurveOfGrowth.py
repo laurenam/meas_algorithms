@@ -669,6 +669,28 @@ class CurveOfGrowth(object):
         except NameError, e:
             raise KeyError(str(e))      # be consistent with afwTable
 
+    def getRatio(self, inner, outer):
+        """!Return the flux ratio between two radii and the error on the ratio.
+
+        \param inner     Index of the inner radius (numerator of the ratio).
+        \param outer     Index of the outer radius (denominator of the ratio).
+        """
+        if outer < inner:
+            raise ValueError("Inner index (%s) is larger than outer index (%d)" % (inner, outer))
+        fInner = self.apertureFlux[inner]
+        fOuter = self.apertureFlux[outer]
+        ratio = fInner / fOuter
+        # To compute error on the ratio, we propagate errors on:
+        #  ratio = fInner / (fInner + delta)
+        # where delta = fOuter - fInner
+        # because the errors on f_inner and delta are independent,
+        # while the errors on f_outer and f_inner are not.
+        fInnerVar = self.apertureFluxErr[inner]**2
+        delta = fOuter - fInner
+        deltaVar = self.apertureFluxErr[outer]**2 - fInnerVar
+        ratioErr = (fInnerVar*delta**2 + deltaVar*fInner**2)**0.5 / fOuter**2
+        return ratio, ratioErr
+
     def _estimateMeanAnnularFlux(self):
         """
         Given a CurveOfGrowth filled with aperture photometry from sources, return the weighted mean
