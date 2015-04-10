@@ -255,9 +255,10 @@ the exposure.
 
         The Sources must have these fields set:
          - flux.aperture (and other fields set by the flux.aperture algorithm)
-         - deblend.nchild
          - all fields listed in \link CurveOfGrowthMeasurementConfig.badFlags\endlink
          - classification.extendedness
+        and may have deblend.nchild set.
+
 
         \return a Struct with:
            - curveOfGrowth a CurveOfGrowth object
@@ -269,7 +270,10 @@ the exposure.
         #
         sch = catalog.getSchema()
 
-        deblend_nchild = sch.find("deblend.nchild").key
+        try:
+            deblend_nchild = sch.find("deblend.nchild").key
+        except LookupError:
+            deblend_nchild = None
         # badFlags may contain globs such as *.flags.pixel.edge which extract expands
         badFlags = []
         for badFlag in self.config.badFlags:
@@ -283,7 +287,7 @@ the exposure.
                             self.config.fracInterpolatedMax, self.config.minAnnularFlux)
 
         for s in catalog:
-            if s.get(deblend_nchild) > 0 or \
+            if (deblend_nchild is not None and s.get(deblend_nchild) > 0) or \
                s.getPsfFlux() < self.config.psfFluxMin or \
                s.get(classification_extendedness) > self.config.classificationMax:
                 continue
