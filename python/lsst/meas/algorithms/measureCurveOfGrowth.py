@@ -255,9 +255,10 @@ the exposure.
 
         The Sources must have these fields set:
          - flux.aperture (and other fields set by the flux.aperture algorithm)
-         - deblend.nchild
          - all fields listed in \link CurveOfGrowthMeasurementConfig.badFlags\endlink
          - classification.extendedness
+        and may have deblend.nchild set.
+
 
         \return a Struct with:
            - curveOfGrowth a CurveOfGrowth object
@@ -269,7 +270,10 @@ the exposure.
         #
         sch = catalog.getSchema()
 
-        deblend_nchild = sch.find("deblend.nchild").key
+        try:
+            deblend_nchild = sch.find("deblend.nchild").key
+        except LookupError:
+            deblend_nchild = None
         # badFlags may contain globs such as *.flags.pixel.edge which extract expands
         badFlags = []
         for badFlag in self.config.badFlags:
@@ -283,7 +287,7 @@ the exposure.
                             self.config.fracInterpolatedMax, self.config.minAnnularFlux)
 
         for s in catalog:
-            if s.get(deblend_nchild) > 0 or \
+            if (deblend_nchild is not None and s.get(deblend_nchild) > 0) or \
                s.getPsfFlux() < self.config.psfFluxMin or \
                s.get(classification_extendedness) > self.config.classificationMax:
                 continue
@@ -665,6 +669,28 @@ class CurveOfGrowth(object):
         except NameError, e:
             raise KeyError(str(e))      # be consistent with afwTable
 
+    def getRatio(self, inner, outer):
+        """!Return the flux ratio between two radii and the error on the ratio.
+
+        \param inner     Index of the inner radius (numerator of the ratio).
+        \param outer     Index of the outer radius (denominator of the ratio).
+        """
+        if outer < inner:
+            raise ValueError("Inner index (%s) is larger than outer index (%d)" % (inner, outer))
+        fInner = self.apertureFlux[inner]
+        fOuter = self.apertureFlux[outer]
+        ratio = fInner / fOuter
+        # To compute error on the ratio, we propagate errors on:
+        #  ratio = fInner / (fInner + delta)
+        # where delta = fOuter - fInner
+        # because the errors on f_inner and delta are independent,
+        # while the errors on f_outer and f_inner are not.
+        fInnerVar = self.apertureFluxErr[inner]**2
+        delta = fOuter - fInner
+        deltaVar = self.apertureFluxErr[outer]**2 - fInnerVar
+        ratioErr = (fInnerVar*delta**2 + deltaVar*fInner**2)**0.5 / fOuter**2
+        return ratio, ratioErr
+
     def _estimateMeanAnnularFlux(self):
         """
         Given a CurveOfGrowth filled with aperture photometry from sources, return the weighted mean
@@ -928,5 +954,5 @@ class SingleProfile(object):
         self.psfFlux = source.getPsfFlux()
         self.alpha, self.alphaErr = None, None
 
-        if self.npoint <= self.i0 + 1:   # no new information (1 point's useless)
+        if self.i0 is None or self.npoint <= self.i0 + 1:   # no new information (1 point's useless)
             raise IndexError("Source %d has <= 1 valid aperture measurement" % source.getId())
