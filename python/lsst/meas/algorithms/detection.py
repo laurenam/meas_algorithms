@@ -163,19 +163,6 @@ class SourceDetectionConfig(pexConfig.Config):
         doc="Background re-estimation configuration"
         )
 
-
-def _getBackgroundImage(backgroundConfig, backgroundObj):
-    """A helper function to get a background image which may be an Approximate"""
-
-    if backgroundConfig.useApprox:
-        actrl = afwMath.ApproximateControl(afwMath.ApproximateControl.CHEBYSHEV, backgroundConfig.approxOrder)
-        backgroundObj.getBackgroundControl().setApproximateControl(actrl)
-        bgimg = backgroundObj.getImageF()
-    else:
-        bgimg = backgroundObj.getImageF()
-    return bgimg
-
-
 class SourceDetectionTask(pipeBase.Task):
     """
     Detect positive and negative sources on an exposure and return a new SourceCatalog.
@@ -353,8 +340,7 @@ class SourceDetectionTask(pipeBase.Task):
             fpSets.background = bkgd
             self.log.log(self.log.INFO, "Resubtracting the background after object detection")
 
-            bgimg = _getBackgroundImage(self.config.background, bkgd)
-            mi -= bgimg
+            mi -= bkgd.getImageF()
             del mi
 
         if self.config.thresholdPolarity == "positive":
@@ -480,6 +466,9 @@ def getBackground(image, backgroundConfig, nx=0, ny=0, algorithm=None):
                                       backgroundConfig.undersampleStyle, sctrl,
                                       backgroundConfig.statisticsProperty)
 
+    actrl = afwMath.ApproximateControl(afwMath.ApproximateControl.CHEBYSHEV, backgroundConfig.approxOrder)
+    bctrl.setApproximateControl(actrl)
+
     return afwMath.makeBackground(image, bctrl)
 
 getBackground.ConfigClass = BackgroundConfig
@@ -518,7 +507,7 @@ def estimateBackground(exposure, backgroundConfig, subtract=True, stats=True,
     backgroundSubtractedExposure = exposure.Factory(exposure, bbox, afwImage.PARENT, True)
     copyImage = backgroundSubtractedExposure.getMaskedImage().getImage()
     if bgimg is None:
-        bgimg = _getBackgroundImage(backgroundConfig, background)
+        bgimg = background.getImageF()
     copyImage -= bgimg
 
     # Record statistics of the background in the bgsub exposure metadata.
