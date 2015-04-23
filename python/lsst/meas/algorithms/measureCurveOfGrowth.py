@@ -369,6 +369,45 @@ the exposure.
             curveOfGrowth = cog
             )
 
+class CurveOfGrowthResult(object):
+    """!Result of the Curve of Growth calculation
+
+    The CurveOfGrowth class manages the calculation, while this class manages
+    the result and its application. The main reason for the separation is that
+    the CurveOfGrowthResult is picklable, so it can be stored or transferred.
+    """
+
+    def __init__(self, apertureFlux, apertureFluxErr):
+        """!Constructor
+
+        \param apertureFlux  ndarray of aperture flux values
+        \param apertureFluxErr  ndarray of aperture flux error values
+        """
+        self.apertureFlux = apertureFlux
+        self.apertureFluxErr = apertureFluxErr
+
+    def getRatio(self, inner, outer):
+        """!Return the flux ratio between two radii and the error on the ratio.
+
+        \param inner     Index of the inner radius (numerator of the ratio).
+        \param outer     Index of the outer radius (denominator of the ratio).
+        """
+        if outer < inner:
+            raise ValueError("Inner index (%s) is larger than outer index (%d)" % (inner, outer))
+        fInner = self.apertureFlux[inner]
+        fOuter = self.apertureFlux[outer]
+        ratio = fInner / fOuter
+        # To compute error on the ratio, we propagate errors on:
+        #  ratio = fInner / (fInner + delta)
+        # where delta = fOuter - fInner
+        # because the errors on f_inner and delta are independent,
+        # while the errors on f_outer and f_inner are not.
+        fInnerVar = self.apertureFluxErr[inner]**2
+        delta = fOuter - fInner
+        deltaVar = self.apertureFluxErr[outer]**2 - fInnerVar
+        ratioErr = (fInnerVar*delta**2 + deltaVar*fInner**2)**0.5 / fOuter**2
+        return ratio, ratioErr
+
 class CurveOfGrowth(object):
     def __init__(self, curveOfGrowthCandidateKey=None, curveOfGrowthUsedKey=None,
                  fracInterpolatedMax=0.1, minAnnularFlux=0):
@@ -412,6 +451,15 @@ class CurveOfGrowth(object):
         
         self.profs = []                 # good profiles, added by addSource
         self.badProfs = []
+        self._result = None     # cache of CurveOfGrowthResult object
+
+    @property
+    def result(self):
+        assert self.apertureFlux is not None and self.apertureFluxErr is not None, \
+               "result being used before it has been calculated"
+        if self._result is None:
+            self._result = CurveOfGrowthResult(self.apertureFlux, self.apertureFluxErr)
+        return self._result
 
     #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -673,21 +721,7 @@ class CurveOfGrowth(object):
         \param inner     Index of the inner radius (numerator of the ratio).
         \param outer     Index of the outer radius (denominator of the ratio).
         """
-        if outer < inner:
-            raise ValueError("Inner index (%s) is larger than outer index (%d)" % (inner, outer))
-        fInner = self.apertureFlux[inner]
-        fOuter = self.apertureFlux[outer]
-        ratio = fInner / fOuter
-        # To compute error on the ratio, we propagate errors on:
-        #  ratio = fInner / (fInner + delta)
-        # where delta = fOuter - fInner
-        # because the errors on f_inner and delta are independent,
-        # while the errors on f_outer and f_inner are not.
-        fInnerVar = self.apertureFluxErr[inner]**2
-        delta = fOuter - fInner
-        deltaVar = self.apertureFluxErr[outer]**2 - fInnerVar
-        ratioErr = (fInnerVar*delta**2 + deltaVar*fInner**2)**0.5 / fOuter**2
-        return ratio, ratioErr
+        return self.result.getRatio(inner, outer)
 
     def _estimateMeanAnnularFlux(self):
         """
