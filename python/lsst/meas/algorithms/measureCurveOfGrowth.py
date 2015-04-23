@@ -616,8 +616,9 @@ class CurveOfGrowth(object):
             goodProfs = []
             for prof in self.profs:
                 goodSlice = slice(prof.i0, prof.npoint)
-                chi = (prof.annularFlux - prof.alpha*robustAnnularFlux)/prof.annularFluxErr
-                chi2 = np.sum(chi[goodSlice]**2)
+                chi = ((prof.annularFlux[goodSlice] - prof.alpha*robustAnnularFlux[goodSlice])/
+                       prof.annularFluxErr[goodSlice])
+                chi2 = np.sum(chi**2)
 
                 self.rchi2 = chi2/(prof.npoint - prof.i0 - 1)
 
