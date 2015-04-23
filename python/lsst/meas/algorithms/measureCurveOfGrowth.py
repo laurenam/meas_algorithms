@@ -25,7 +25,6 @@ import numpy as np
 import lsstDebug
 import lsst.pex.config as pex_config
 import lsst.pipe.base as pipe_base
-import lsst.afw.geom as afw_geom
 import lsst.afw.display.ds9 as ds9
 
 try:
@@ -463,8 +462,6 @@ class CurveOfGrowth(object):
         if i0 != 0:
             raise RuntimeError("Profile doesn't extend to r==0")
         
-        annularFlux = np.empty(nRadial)
-        annularFluxErr = np.empty_like(annularFlux)
         #
         # ensure that the apertures overlap sufficiently to be able to estimate a
         # curve of growth. conn[k] == 1 => annulus k is connected to annulus k + 1
@@ -745,14 +742,13 @@ class CurveOfGrowth(object):
         
         flux = source.get("flux.aperture")
         fluxErr = source.get("flux.aperture.err")
-        nInterpPixel = source.get("flux.aperture.nInterpolatedPixel")
 
         if len(self.annularFlux) < nRadial:
-            nRadial = annularFlux
+            nRadial = len(self.annularFlux)
 
         if rMax is not None:            # maximum radius to use
             for i in range(i0, nRadial):
-                if r[i + 1] > rMax:
+                if self.radii[i + 1] > rMax:
                     break
 
                 if i > i0:                      # don't entirely trim overlap
