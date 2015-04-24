@@ -1,5 +1,8 @@
 // -*- lsst-c++ -*-
 
+#include <cctype> // ::toupper
+#include <algorithm> // std::transform
+
 #include "boost/make_shared.hpp"
 
 #include "lsst/meas/algorithms/PixelFlags.h"
@@ -55,7 +58,6 @@ public:
     };
 
     typedef boost::array< afw::table::Key<afw::table::Flag>, N_FLAGS > KeyArray;
-
     PixelFlagAlgorithm(PixelFlagControl const & ctrl, afw::table::Schema & schema);
 
 private:
@@ -70,6 +72,10 @@ private:
     LSST_MEAS_ALGORITHM_PRIVATE_INTERFACE(PixelFlagAlgorithm);
 
     KeyArray _keys;
+    afw::table::Key<afw::table::Flag> _offImageKey;
+    typedef std::map<std::string, afw::table::Key<afw::table::Flag> > KeyMap;
+    KeyMap _centerKeys;
+    KeyMap _anyKeys;
 };
 
 PixelFlagAlgorithm::PixelFlagAlgorithm(PixelFlagControl const & ctrl, afw::table::Schema & schema) :
@@ -106,12 +112,19 @@ PixelFlagAlgorithm::PixelFlagAlgorithm(PixelFlagControl const & ctrl, afw::table
         ctrl.name + ".suspect.center", "source's center is close to suspect pixels"
     );
 
-    try {
-        afw::image::Exposure<lsst::afw::image::MaskPixel>::MaskedImageT::Mask::getPlaneBitMask("CLIPPED");
-        _keys[CLIPPED] = schema.addField<afw::table::Flag>(
-            ctrl.name + ".clipped.any", "source's footprint includes clipped pixels"
-            );
-    } catch (pex::exceptions::InvalidParameterException &) {}
+    _offImageKey = schema.addField<afw::table::Flag>(ctrl.name + ".offimage", "source center is off image");
+    for (std::vector<std::string>::const_iterator i = ctrl.center.begin(); i != ctrl.center.end(); ++i) {
+        std::string name(*i);
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        _centerKeys[*i] = schema.addField<afw::table::Flag>(ctrl.name + "." + name + ".center",
+                                                            "source center is close to " + *i + " pixels");
+    }
+    for (std::vector<std::string>::const_iterator i = ctrl.any.begin(); i != ctrl.any.end(); ++i) {
+        std::string name(*i);
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        _anyKeys[*i] = schema.addField<afw::table::Flag>(ctrl.name + "." + name + ".any",
+                                                         "source footprint includes " + *i + " pixels");
+    }
 }
 
 template <typename PixelT>
@@ -126,6 +139,7 @@ void PixelFlagAlgorithm::_apply(
     // Catch centroids off the image or NAN
     if (!exposure.getMaskedImage().getBBox().contains(afw::geom::Point2I(center) -
                                                       afw::geom::Extent2I(exposure.getXY0()))) {
+        source.set(_offImageKey, true);
         source.set(_keys[EDGE], true);
         return;                         // Can't continue safely
     }
@@ -153,11 +167,13 @@ void PixelFlagAlgorithm::_apply(
         if (func.getBits() & MaskedImageT::Mask::getPlaneBitMask("CR")) {
             source.set(_keys[CR], true);
         }
-        try {
-            if (func.getBits() & MaskedImageT::Mask::getPlaneBitMask("CLIPPED")) {
-                source.set(_keys[CLIPPED], true);
-            }
-        } catch (pex::exceptions::InvalidParameterException &) {}
+        for (KeyMap::const_iterator i = _anyKeys.begin(); i != _anyKeys.end(); ++i) {
+            try {
+                if (func.getBits() & MaskedImageT::Mask::getPlaneBitMask(i->first)) {
+                    source.set(i->second, true);
+                }
+            } catch (pex::exceptions::InvalidParameterException &) {}
+        }
     }
 
     // Check for bits set in the 3x3 box around the center
@@ -177,7 +193,13 @@ void PixelFlagAlgorithm::_apply(
     if (func.getBits() & MaskedImageT::Mask::getPlaneBitMask("CR")) {
         source.set(_keys[CR_CENTER], true);
     }
-
+    for (KeyMap::const_iterator i = _centerKeys.begin(); i != _centerKeys.end(); ++i) {
+        try {
+            if (func.getBits() & MaskedImageT::Mask::getPlaneBitMask(i->first)) {
+                source.set(i->second, true);
+            }
+        } catch (pex::exceptions::InvalidParameterException &) {}
+    }
 }
 
 LSST_MEAS_ALGORITHM_PRIVATE_IMPLEMENTATION(PixelFlagAlgorithm);

@@ -42,6 +42,11 @@ public:
 
     PTR(PixelFlagControl) clone() const { return boost::static_pointer_cast<PixelFlagControl>(_clone()); }
     
+    LSST_CONTROL_FIELD(center, std::vector<std::string>,
+                       "List of mask planes for which to search center of footprint");
+    LSST_CONTROL_FIELD(any, std::vector<std::string>,
+                       "List of mask planes for which to search entire footprint");
+
 private:
 
     virtual PTR(AlgorithmControl) _clone() const;
