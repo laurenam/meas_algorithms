@@ -184,6 +184,7 @@ class ReplaceWithNoiseTestCase(unittest.TestCase):
         exposure.setPsf(psf)
 
         detconf = measAlg.SourceDetectionConfig()
+        detconf.returnOriginalFootprints = True
         detconf.reEstimateBackground = False
         measconf = measAlg.SourceMeasurementConfig()
         measconf.doReplaceWithNoise = True
@@ -524,6 +525,7 @@ class ReplaceWithNoiseTestCase(unittest.TestCase):
         exposure.setPsf(psf)
 
         detconf = measAlg.SourceDetectionConfig()
+        detconf.returnOriginalFootprints = True
         detconf.reEstimateBackground = False
 
         measconf = measAlg.SourceMeasurementConfig()
