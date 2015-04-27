@@ -616,12 +616,13 @@ class CurveOfGrowth(object):
             goodProfs = []
             for prof in self.profs:
                 goodSlice = slice(prof.i0, prof.npoint)
-                chi = (prof.annularFlux - prof.alpha*robustAnnularFlux)/prof.annularFluxErr
-                chi2 = np.sum(chi[goodSlice]**2)
+                chi = ((prof.annularFlux[goodSlice] - prof.alpha*robustAnnularFlux[goodSlice])/
+                       prof.annularFluxErr[goodSlice])
+                chi2 = np.sum(chi**2)
 
                 self.rchi2 = chi2/(prof.npoint - prof.i0 - 1)
 
-                if self.rchi2 > maxRChi2:
+                if self.rchi2 > maxRChi2 or not np.all(np.isfinite(chi)):
                     self.badProfs.append(prof)
                 else:
                     goodProfs.append(prof)
@@ -930,7 +931,10 @@ class SingleProfile(object):
         
         self.prof = flux[:]
 
+        self.npoint = 0         # (number of good values) + i0
         for i in range(nRadial):
+            if not np.isfinite(flux[i]) or not np.isfinite(fluxErr[i]) or fluxErr[i] < fluxErrOld:
+                break
             self.annularFlux[i] = flux[i] - fluxOld
             self.annularFluxErr[i] = np.sqrt(fluxErr[i]**2 - fluxErrOld**2)
 
@@ -948,8 +952,8 @@ class SingleProfile(object):
                 break
 
             areaOld, fluxOld, fluxErrOld, nInterpOld = area, flux[i], fluxErr[i], nInterpPixel[i]
+            self.npoint += 1
 
-        self.npoint = i + 1              # (number of good values) + i0
         self.source = source             # debugging
         self.psfFlux = source.getPsfFlux()
         self.alpha, self.alphaErr = None, None
