@@ -26,6 +26,7 @@ import lsstDebug
 import lsst.pex.config as pex_config
 import lsst.pipe.base as pipe_base
 import lsst.afw.display.ds9 as ds9
+from .algorithmsLib import getApCorrRegistry
 
 try:
     import matplotlib.pyplot as plt
@@ -407,6 +408,80 @@ class CurveOfGrowthResult(object):
         deltaVar = self.apertureFluxErr[outer]**2 - fInnerVar
         ratioErr = (fInnerVar*delta**2 + deltaVar*fInner**2)**0.5 / fOuter**2
         return ratio, ratioErr
+
+    def apply(self, measurementConfig, catalog=None, algorithms=None, calib=None, apCorr=None, log=None):
+        """!Apply the results of the curve of growth analysis to a source catalog
+
+        We deduce the correction that needs to be applied from inspecting the
+        'measurementConfig' (a SourceMeasurementConfig) and finding the aperture
+        being used for calibration.  The correction is then applied to the flux
+        of each of the specified 'algorithms'. If 'algorithms' is None, the set
+        of algorithms in the aperture correction registry is used.
+
+        Note that we do *not* correct the errors in the fluxes, since they are a
+        systematic error in the zero point, rather than errors in the individual
+        fluxes.
+
+        If a 'catalog' is provided, the following entries will be added to its
+        metadata:
+          * CURVE_OF_GROWTH.CORRECTION.VALUE: the correction
+          * CURVE_OF_GROWTH.CORRECTION.ERROR: the error in the correction
+          * CURVE_OF_GROWTH.CORRECTION.RADIUS.FROM: inner radius
+          * CURVE_OF_GROWTH.CORRECTION.RADIUS.TO: outer radius
+          * CURVE_OF_GROWTH.CORRECTION.ALGORITHMS: list of algorithms corrected
+
+        \param measurementConfig    Configuration for source measurement
+        \param catalog    Source catalog to have flux measurements corrected
+        \param algorithms    Iterable of algorithms to correct, or None
+        \param calib    Calib object to be corrected
+        \param apCorr    Aperture corrections to be corrected
+        \param log    Log object for logging the factor that's applied
+        """
+        # Figure out which aperture corresponds to our calibration aperture
+        # This requires assuming a parameter name for the aperture;
+        # "radius" is used for the algorithms flux.sinc and flux.naive
+        calibAlg = measurementConfig.slots.calibFlux
+        radius = measurementConfig.algorithms[calibAlg].radius
+        apertures = np.array(measurementConfig.algorithms["flux.aperture"].radii)
+        if len(np.where(apertures == radius)[0]) == 0:
+            raise RuntimeError(
+                "Calibration aperture (algorithm %s, radius %f) is not measured by flux.aperture (radii %s)" %
+                (calibAlg, radius, apertures))
+        calibIndex = np.where(apertures == radius)[0][0]
+        corrIndex = np.where(np.isfinite(self.apertureFlux))[0][-1] # Biggest aperture with good correctn
+
+        # The 'ratio' should be less than unity, because we're getting additional flux between
+        # the small and large apertures. We will divide fluxes by this ratio so they get brighter.
+        # We don't worry about the error except to log it, as it is redundant with any photometric calibration.
+        ratio, ratioErr = self.getRatio(calibIndex, corrIndex)
+        if log:
+            log.info("Applying curve of growth (radius %.1f --> %.1f): %f (+/- %f)" %
+                     (radius, apertures[corrIndex], ratio, ratioErr))
+
+        if algorithms is None:
+            algorithms = getApCorrRegistry()
+        if catalog is not None:
+            for alg in algorithms:
+                if alg in catalog:
+                    # Fluxes should be divided by the ratio, to get brighter.
+                    catalog[alg][:] /= ratio
+            metadata = catalog.getMetadata()
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.VALUE", ratio)
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.ERROR", ratioErr)
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.RADIUS.FROM", radius)
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.RADIUS.TO", apertures[corrIndex])
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.ALGORITHMS", list(algorithms))
+
+        if calib is not None:
+            # With this correction our flux measurements are brighter, so to have the same calibrated flux for
+            # a reference star as we did previously the fluxMag0 also needs to be larger, so we divide.
+            calib /= ratio
+
+        if apCorr is not None:
+            for alg in algorithms:
+                if alg in apCorr:
+                    # Aperture corrections should be divided by the ratio, to get brighter.
+                    apCorr[alg] = apCorr[alg]/ratio
 
 class CurveOfGrowth(object):
     def __init__(self, curveOfGrowthCandidateKey=None, curveOfGrowthUsedKey=None,
@@ -921,6 +996,24 @@ class CurveOfGrowth(object):
 
         return fig
     
+    def apply(self, *args, **kwargs):
+        """!Apply the results of the curve of growth analysis to a source catalog
+
+        We deduce the correction that needs to be applied from inspecting the
+        'measurementConfig' (a SourceMeasurementConfig) and finding the aperture
+        being used for calibration.  The correction is then applied to the flux
+        and error of each of the specified 'algorithms'. If 'algorithms' is None,
+        the set of algorithms in the aperture correction registry is used.
+
+        \param measurementConfig    Configuration for source measurement
+        \param catalog    Source catalog to have flux measurements corrected
+        \param algorithms    Iterable of algorithms to correct, or None
+        \param calib    Calib object to be corrected
+        \param apCorr    Aperture corrections to be corrected
+        \param log    Log object for logging the factor that's applied
+        """
+        return self.result.apply(*args, **kwargs)
+
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 class SingleProfile(object):
