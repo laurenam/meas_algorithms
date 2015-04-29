@@ -570,7 +570,7 @@ class CurveOfGrowth(object):
         if self.curveOfGrowthCandidateKey:
             source.set(self.curveOfGrowthCandidateKey, True)
 
-    def _estimate(self):
+    def _estimate(self, doErrors=True):
         """
         Given a CurveOfGrowth filled with sources' aperture fluxes, derive the curve of growth
         by a straight solution of the MLE problem (i.e. no clipping)
@@ -657,7 +657,13 @@ class CurveOfGrowth(object):
         # inverse for error estimates, so we don't solve the matrix equation directly
         #
         try:
-            iMTVM = np.linalg.inv(MTVM)
+            if doErrors:
+                iMTVM = np.linalg.inv(MTVM)
+                theta = np.exp(iMTVM.dot(MVy))
+                thetaErr = np.sqrt(np.diag(iMTVM))*theta
+            else:
+                theta = np.exp(np.linalg.solve(MTVM, MVy))
+                thetaErr = np.ones_like(theta)*np.nan
         except Exception as e:
             raise RuntimeError("Curve of growth matrix is singular: %s" % e)
 
@@ -666,9 +672,6 @@ class CurveOfGrowth(object):
 
         self.annularFlux[0] = 1
         self.annularFluxErr[0] = 0
-
-        theta = np.exp(iMTVM.dot(MVy))
-        thetaErr = np.sqrt(np.diag(iMTVM))*theta
 
         self.annularFlux[1:] = theta[0:nRadial-1]
         self.annularFluxErr[1:] = thetaErr[0:nRadial-1]
@@ -717,17 +720,17 @@ class CurveOfGrowth(object):
         (weighted) mean or median; the choice is set by finalEstimationAlgorithm.  Empirically, better results
         seem to be returned by using mean or median.
         """
-        #
-        # Make an initial estimate without clipping
-        #
-        self._estimate()
-
         try:
             maxRChi2[0]
         except IndexError:
             maxRChi2 = [maxRChi2]
 
-        for maxRChi2 in maxRChi2:
+        #
+        # Make an initial estimate without clipping
+        #
+        self._estimate(doErrors=(len(maxRChi2) == 0))
+
+        for i, maxRChi2Value in enumerate(maxRChi2):
             #
             # Estimate a robust average of the input aperture fluxes in each annulus
             #
@@ -742,7 +745,7 @@ class CurveOfGrowth(object):
 
                 self.rchi2 = chi2/(prof.npoint - prof.i0 - 1)
 
-                if self.rchi2 > maxRChi2 or not np.all(np.isfinite(chi)):
+                if self.rchi2 > maxRChi2Value or not np.all(np.isfinite(chi)):
                     self.badProfs.append(prof)
                 else:
                     goodProfs.append(prof)
@@ -751,7 +754,7 @@ class CurveOfGrowth(object):
             #
             # Estimate the curve of growth having discarded those suspect objects
             #
-            self._estimate()
+            self._estimate(doErrors=(i + 1 == len(maxRChi2)))
         #
         # Record which sources were actually used
         #
