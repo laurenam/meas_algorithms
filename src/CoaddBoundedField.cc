@@ -21,6 +21,7 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
 
+#include "lsst/pex/exceptions/Runtime.h"
 #include "lsst/afw/table/io/CatalogVector.h"
 #include "lsst/afw/table/io/OutputArchive.h"
 #include "lsst/afw/table/io/InputArchive.h"
@@ -213,6 +214,10 @@ void CoaddBoundedField::write(OutputArchiveHandle & handle) const {
         record2->set(keys2.weight, i->weight);
     }
     handle.saveCatalog(cat2);
+}
+
+PTR(afw::math::BoundedField) CoaddBoundedField::operator*(double const scale) const {
+    throw LSST_EXCEPT(pex::exceptions::NotFoundException, "Scaling of CoaddBoundedField is not implemented");
 }
 
 }}} // namespace lsst::meas::algorithms
