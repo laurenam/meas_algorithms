@@ -249,9 +249,9 @@ the exposure.
             self.curveOfGrowthCandidateKey = None
             self.curveOfGrowthUsedKey = None
 
-    def run(self, catalog):
+    def run(self, *catalogList):
         """!Estimate the curve of growth from a set of Sources by invoking run(catalog)
-        \param catalog  A catalog of Sources
+        \param catalogList  A list of SourceCatalogs
 
         The Sources must have these fields set:
          - flux.aperture (and other fields set by the flux.aperture algorithm)
@@ -268,7 +268,12 @@ the exposure.
         # we can't numpy views into columns, so define the needed keys and perform
         # the checks on each source
         #
-        sch = catalog.getSchema()
+        sch = None
+        for catalog in catalogList:
+            if sch is None:
+                sch = catalog.getSchema()
+            else:
+                assert sch == catalog.getSchema(), "Schema mismatch"
 
         try:
             deblend_nchild = sch.find("deblend.nchild").key
@@ -286,17 +291,18 @@ the exposure.
                             self.curveOfGrowthUsedKey,
                             self.config.fracInterpolatedMax, self.config.minAnnularFlux)
 
-        for s in catalog:
-            if (deblend_nchild is not None and s.get(deblend_nchild) > 0) or \
-               s.getPsfFlux() < self.config.psfFluxMin or \
-               s.get(classification_extendedness) > self.config.classificationMax:
-                continue
-
-            for badFlag in badFlags:
-                if s.get(badFlag):
+        for catalog in catalogList:
+            for s in catalog:
+                if (deblend_nchild is not None and s.get(deblend_nchild) > 0) or \
+                   s.getPsfFlux() < self.config.psfFluxMin or \
+                   s.get(classification_extendedness) > self.config.classificationMax:
                     continue
 
-            cog.addSource(s)
+                for badFlag in badFlags:
+                    if s.get(badFlag):
+                        continue
+
+                cog.addSource(s)
         #
         # and actually estimate it
         #
@@ -313,33 +319,34 @@ the exposure.
                 else:
                     ds9.erase(frame=frame)
 
-                if catalog.getMetadata().exists("flux_aperture_radii"):
-                    radii = catalog.getMetadata().get("flux_aperture_radii")
+                for catalog in catalogList:
+                    if catalog.getMetadata().exists("flux_aperture_radii"):
+                        radii = catalog.getMetadata().get("flux_aperture_radii")
 
-                    with ds9.Buffering():
-                        for s in catalog:
-                            if not s.get("curveOfGrowth.candidate"):
-                                continue
+                        with ds9.Buffering():
+                            for s in catalog:
+                                if not s.get("curveOfGrowth.candidate"):
+                                    continue
 
-                            xy = s.getCentroid()
-                            nInterpPixel = s.get("flux.aperture.nInterpolatedPixel")
-                            nInterpOld = 0    # number of interpolated pixels inside previous radius
-                            radiusOld = 0
+                                xy = s.getCentroid()
+                                nInterpPixel = s.get("flux.aperture.nInterpolatedPixel")
+                                nInterpOld = 0    # number of interpolated pixels inside previous radius
+                                radiusOld = 0
 
-                            for i in range(s.get("flux.aperture.nProfile")):
-                                nInterpAperture = nInterpPixel[i] - nInterpOld
-                                area = np.pi*(radii[i]**2 - radiusOld**2)
-                                nInterpOld, radiusOld = nInterpPixel[i], radii[i]
+                                for i in range(s.get("flux.aperture.nProfile")):
+                                    nInterpAperture = nInterpPixel[i] - nInterpOld
+                                    area = np.pi*(radii[i]**2 - radiusOld**2)
+                                    nInterpOld, radiusOld = nInterpPixel[i], radii[i]
 
-                                ctype=ds9.YELLOW if \
-                                       nInterpAperture/area < self.config.fracInterpolatedMax else ds9.BLUE
+                                    ctype=ds9.YELLOW if \
+                                           nInterpAperture/area < self.config.fracInterpolatedMax else ds9.BLUE
 
-                                ds9.dot('o', *xy, size=radii[i], frame=frame, ctype=ctype)
+                                    ds9.dot('o', *xy, size=radii[i], frame=frame, ctype=ctype)
 
-                            if lsstDebug.Info(__name__).displayImageIds:
-                                ds9.dot("%d" % (s.getId()),
-                                        xy[0] + 0.85*radii[i], xy[1] + 0.85*radii[i], frame=frame,
-                                        ctype=ds9.GREEN if s.get("curveOfGrowth.used") else ds9.RED)
+                                if lsstDebug.Info(__name__).displayImageIds:
+                                    ds9.dot("%d" % (s.getId()),
+                                            xy[0] + 0.85*radii[i], xy[1] + 0.85*radii[i], frame=frame,
+                                            ctype=ds9.GREEN if s.get("curveOfGrowth.used") else ds9.RED)
 
             if lsstDebug.Info(__name__).plotProfiles:
                 fig = cog.plot(normalize=lsstDebug.Info(__name__).normalize,
