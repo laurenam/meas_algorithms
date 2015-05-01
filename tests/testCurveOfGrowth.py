@@ -23,6 +23,7 @@
 import os
 import numpy as np
 import unittest
+import pickle
 
 import lsst.daf.base as dafBase
 import lsst.afw.geom as afwGeom
@@ -99,18 +100,24 @@ class CurveOfGrowthTestCase(utilsTests.TestCase):
         self.fakeSources()
         result = curveOfGrowthMeasurementTask.run(self.sources)
         curveOfGrowth = result.curveOfGrowth
-        #
-        # Check that the curve of growth is the same as the input aperture fluxes
-        #
-        ratio = curveOfGrowth.apertureFlux/self.trueApertureFlux
-        for r in ratio/ratio[0]:
-            self.assertAlmostEqual(r, 1.0)
+
+        def check(cog):
+            #
+            # Check that the curve of growth is the same as the input aperture fluxes
+            #
+            ratio = cog.apertureFlux/self.trueApertureFlux
+            for r in ratio/ratio[0]:
+                self.assertAlmostEqual(r, 1.0)
+
+        check(curveOfGrowth)
 
         if display:
             fig = curveOfGrowth.plot()
             if fig:
                 fig.show()              # not in plot() for ipython's sake
                 raw_input("Continue? ")
+
+        check(pickle.loads(pickle.dumps(curveOfGrowth.result)))
     
     def testPsfFluxFromCurveOfGrowth(self):
         """Test that we can estimate a psfFlux using the curveOfGrowth

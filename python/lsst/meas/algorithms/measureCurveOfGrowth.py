@@ -25,8 +25,8 @@ import numpy as np
 import lsstDebug
 import lsst.pex.config as pex_config
 import lsst.pipe.base as pipe_base
-import lsst.afw.geom as afw_geom
 import lsst.afw.display.ds9 as ds9
+from .algorithmsLib import getApCorrRegistry
 
 try:
     import matplotlib.pyplot as plt
@@ -249,9 +249,9 @@ the exposure.
             self.curveOfGrowthCandidateKey = None
             self.curveOfGrowthUsedKey = None
 
-    def run(self, catalog):
+    def run(self, *catalogList):
         """!Estimate the curve of growth from a set of Sources by invoking run(catalog)
-        \param catalog  A catalog of Sources
+        \param catalogList  A list of SourceCatalogs
 
         The Sources must have these fields set:
          - flux.aperture (and other fields set by the flux.aperture algorithm)
@@ -268,7 +268,12 @@ the exposure.
         # we can't numpy views into columns, so define the needed keys and perform
         # the checks on each source
         #
-        sch = catalog.getSchema()
+        sch = None
+        for catalog in catalogList:
+            if sch is None:
+                sch = catalog.getSchema()
+            else:
+                assert sch == catalog.getSchema(), "Schema mismatch"
 
         try:
             deblend_nchild = sch.find("deblend.nchild").key
@@ -286,17 +291,18 @@ the exposure.
                             self.curveOfGrowthUsedKey,
                             self.config.fracInterpolatedMax, self.config.minAnnularFlux)
 
-        for s in catalog:
-            if (deblend_nchild is not None and s.get(deblend_nchild) > 0) or \
-               s.getPsfFlux() < self.config.psfFluxMin or \
-               s.get(classification_extendedness) > self.config.classificationMax:
-                continue
-
-            for badFlag in badFlags:
-                if s.get(badFlag):
+        for catalog in catalogList:
+            for s in catalog:
+                if (deblend_nchild is not None and s.get(deblend_nchild) > 0) or \
+                   s.getPsfFlux() < self.config.psfFluxMin or \
+                   s.get(classification_extendedness) > self.config.classificationMax:
                     continue
 
-            cog.addSource(s)
+                for badFlag in badFlags:
+                    if s.get(badFlag):
+                        continue
+
+                cog.addSource(s)
         #
         # and actually estimate it
         #
@@ -313,33 +319,34 @@ the exposure.
                 else:
                     ds9.erase(frame=frame)
 
-                if catalog.getMetadata().exists("flux_aperture_radii"):
-                    radii = catalog.getMetadata().get("flux_aperture_radii")
+                for catalog in catalogList:
+                    if catalog.getMetadata().exists("flux_aperture_radii"):
+                        radii = catalog.getMetadata().get("flux_aperture_radii")
 
-                    with ds9.Buffering():
-                        for s in catalog:
-                            if not s.get("curveOfGrowth.candidate"):
-                                continue
+                        with ds9.Buffering():
+                            for s in catalog:
+                                if not s.get("curveOfGrowth.candidate"):
+                                    continue
 
-                            xy = s.getCentroid()
-                            nInterpPixel = s.get("flux.aperture.nInterpolatedPixel")
-                            nInterpOld = 0    # number of interpolated pixels inside previous radius
-                            radiusOld = 0
+                                xy = s.getCentroid()
+                                nInterpPixel = s.get("flux.aperture.nInterpolatedPixel")
+                                nInterpOld = 0    # number of interpolated pixels inside previous radius
+                                radiusOld = 0
 
-                            for i in range(s.get("flux.aperture.nProfile")):
-                                nInterpAperture = nInterpPixel[i] - nInterpOld
-                                area = np.pi*(radii[i]**2 - radiusOld**2)
-                                nInterpOld, radiusOld = nInterpPixel[i], radii[i]
+                                for i in range(s.get("flux.aperture.nProfile")):
+                                    nInterpAperture = nInterpPixel[i] - nInterpOld
+                                    area = np.pi*(radii[i]**2 - radiusOld**2)
+                                    nInterpOld, radiusOld = nInterpPixel[i], radii[i]
 
-                                ctype=ds9.YELLOW if \
-                                       nInterpAperture/area < self.config.fracInterpolatedMax else ds9.BLUE
+                                    ctype=ds9.YELLOW if \
+                                           nInterpAperture/area < self.config.fracInterpolatedMax else ds9.BLUE
 
-                                ds9.dot('o', *xy, size=radii[i], frame=frame, ctype=ctype)
+                                    ds9.dot('o', *xy, size=radii[i], frame=frame, ctype=ctype)
 
-                            if lsstDebug.Info(__name__).displayImageIds:
-                                ds9.dot("%d" % (s.getId()),
-                                        xy[0] + 0.85*radii[i], xy[1] + 0.85*radii[i], frame=frame,
-                                        ctype=ds9.GREEN if s.get("curveOfGrowth.used") else ds9.RED)
+                                if lsstDebug.Info(__name__).displayImageIds:
+                                    ds9.dot("%d" % (s.getId()),
+                                            xy[0] + 0.85*radii[i], xy[1] + 0.85*radii[i], frame=frame,
+                                            ctype=ds9.GREEN if s.get("curveOfGrowth.used") else ds9.RED)
 
             if lsstDebug.Info(__name__).plotProfiles:
                 fig = cog.plot(normalize=lsstDebug.Info(__name__).normalize,
@@ -369,6 +376,119 @@ the exposure.
         return pipe_base.Struct(
             curveOfGrowth = cog
             )
+
+class CurveOfGrowthResult(object):
+    """!Result of the Curve of Growth calculation
+
+    The CurveOfGrowth class manages the calculation, while this class manages
+    the result and its application. The main reason for the separation is that
+    the CurveOfGrowthResult is picklable, so it can be stored or transferred.
+    """
+
+    def __init__(self, apertureFlux, apertureFluxErr):
+        """!Constructor
+
+        \param apertureFlux  ndarray of aperture flux values
+        \param apertureFluxErr  ndarray of aperture flux error values
+        """
+        self.apertureFlux = apertureFlux
+        self.apertureFluxErr = apertureFluxErr
+
+    def getRatio(self, inner, outer):
+        """!Return the flux ratio between two radii and the error on the ratio.
+
+        \param inner     Index of the inner radius (numerator of the ratio).
+        \param outer     Index of the outer radius (denominator of the ratio).
+        """
+        if outer < inner:
+            raise ValueError("Inner index (%s) is larger than outer index (%d)" % (inner, outer))
+        fInner = self.apertureFlux[inner]
+        fOuter = self.apertureFlux[outer]
+        ratio = fInner / fOuter
+        # To compute error on the ratio, we propagate errors on:
+        #  ratio = fInner / (fInner + delta)
+        # where delta = fOuter - fInner
+        # because the errors on f_inner and delta are independent,
+        # while the errors on f_outer and f_inner are not.
+        fInnerVar = self.apertureFluxErr[inner]**2
+        delta = fOuter - fInner
+        deltaVar = self.apertureFluxErr[outer]**2 - fInnerVar
+        ratioErr = (fInnerVar*delta**2 + deltaVar*fInner**2)**0.5 / fOuter**2
+        return ratio, ratioErr
+
+    def apply(self, measurementConfig, catalog=None, algorithms=None, calib=None, apCorr=None, log=None):
+        """!Apply the results of the curve of growth analysis to a source catalog
+
+        We deduce the correction that needs to be applied from inspecting the
+        'measurementConfig' (a SourceMeasurementConfig) and finding the aperture
+        being used for calibration.  The correction is then applied to the flux
+        of each of the specified 'algorithms'. If 'algorithms' is None, the set
+        of algorithms in the aperture correction registry is used.
+
+        Note that we do *not* correct the errors in the fluxes, since they are a
+        systematic error in the zero point, rather than errors in the individual
+        fluxes.
+
+        If a 'catalog' is provided, the following entries will be added to its
+        metadata:
+          * CURVE_OF_GROWTH.CORRECTION.VALUE: the correction
+          * CURVE_OF_GROWTH.CORRECTION.ERROR: the error in the correction
+          * CURVE_OF_GROWTH.CORRECTION.RADIUS.FROM: inner radius
+          * CURVE_OF_GROWTH.CORRECTION.RADIUS.TO: outer radius
+          * CURVE_OF_GROWTH.CORRECTION.ALGORITHMS: list of algorithms corrected
+
+        \param measurementConfig    Configuration for source measurement
+        \param catalog    Source catalog to have flux measurements corrected
+        \param algorithms    Iterable of algorithms to correct, or None
+        \param calib    Calib object to be corrected
+        \param apCorr    Aperture corrections to be corrected
+        \param log    Log object for logging the factor that's applied
+        """
+        # Figure out which aperture corresponds to our calibration aperture
+        # This requires assuming a parameter name for the aperture;
+        # "radius" is used for the algorithms flux.sinc and flux.naive
+        calibAlg = measurementConfig.slots.calibFlux
+        radius = measurementConfig.algorithms[calibAlg].radius
+        apertures = np.array(measurementConfig.algorithms["flux.aperture"].radii)
+        if len(np.where(apertures == radius)[0]) == 0:
+            raise RuntimeError(
+                "Calibration aperture (algorithm %s, radius %f) is not measured by flux.aperture (radii %s)" %
+                (calibAlg, radius, apertures))
+        calibIndex = np.where(apertures == radius)[0][0]
+        corrIndex = np.where(np.isfinite(self.apertureFlux))[0][-1] # Biggest aperture with good correctn
+
+        # The 'ratio' should be less than unity, because we're getting additional flux between
+        # the small and large apertures. We will divide fluxes by this ratio so they get brighter.
+        # We don't worry about the error except to log it, as it is redundant with any photometric calibration.
+        ratio, ratioErr = self.getRatio(calibIndex, corrIndex)
+        if log:
+            log.info("Applying curve of growth (radius %.1f --> %.1f): %f (+/- %f)" %
+                     (radius, apertures[corrIndex], ratio, ratioErr))
+
+        if algorithms is None:
+            algorithms = getApCorrRegistry()
+        if catalog is not None:
+            for alg in algorithms:
+                if alg in catalog:
+                    # Fluxes should be divided by the ratio, to get brighter.
+                    catalog[alg][:] /= ratio
+            metadata = catalog.getMetadata()
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.VALUE", ratio)
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.ERROR", ratioErr)
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.RADIUS.FROM", radius)
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.RADIUS.TO", apertures[corrIndex])
+            metadata.set("CURVE_OF_GROWTH.CORRECTION.ALGORITHMS", list(algorithms))
+
+        if calib is not None:
+            # With this correction our flux measurements are brighter, so to have the same calibrated flux for
+            # a reference star as we did previously the fluxMag0 also needs to be larger, so we divide.
+            calib /= ratio
+
+        if apCorr is not None:
+            for alg in algorithms:
+                if alg in apCorr:
+                    # Aperture corrections should be divided by the ratio, to get brighter.
+                    apCorr[alg] = apCorr[alg]/ratio
 
 class CurveOfGrowth(object):
     def __init__(self, curveOfGrowthCandidateKey=None, curveOfGrowthUsedKey=None,
@@ -413,6 +533,15 @@ class CurveOfGrowth(object):
         
         self.profs = []                 # good profiles, added by addSource
         self.badProfs = []
+        self._result = None     # cache of CurveOfGrowthResult object
+
+    @property
+    def result(self):
+        assert self.apertureFlux is not None and self.apertureFluxErr is not None, \
+               "result being used before it has been calculated"
+        if self._result is None:
+            self._result = CurveOfGrowthResult(self.apertureFlux, self.apertureFluxErr)
+        return self._result
 
     #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -448,7 +577,7 @@ class CurveOfGrowth(object):
         if self.curveOfGrowthCandidateKey:
             source.set(self.curveOfGrowthCandidateKey, True)
 
-    def _estimate(self):
+    def _estimate(self, doErrors=True):
         """
         Given a CurveOfGrowth filled with sources' aperture fluxes, derive the curve of growth
         by a straight solution of the MLE problem (i.e. no clipping)
@@ -463,8 +592,6 @@ class CurveOfGrowth(object):
         if i0 != 0:
             raise RuntimeError("Profile doesn't extend to r==0")
         
-        annularFlux = np.empty(nRadial)
-        annularFluxErr = np.empty_like(annularFlux)
         #
         # ensure that the apertures overlap sufficiently to be able to estimate a
         # curve of growth. conn[k] == 1 => annulus k is connected to annulus k + 1
@@ -537,7 +664,13 @@ class CurveOfGrowth(object):
         # inverse for error estimates, so we don't solve the matrix equation directly
         #
         try:
-            iMTVM = np.linalg.inv(MTVM)
+            if doErrors:
+                iMTVM = np.linalg.inv(MTVM)
+                theta = np.exp(iMTVM.dot(MVy))
+                thetaErr = np.sqrt(np.diag(iMTVM))*theta
+            else:
+                theta = np.exp(np.linalg.solve(MTVM, MVy))
+                thetaErr = np.ones_like(theta)*np.nan
         except Exception as e:
             raise RuntimeError("Curve of growth matrix is singular: %s" % e)
 
@@ -546,9 +679,6 @@ class CurveOfGrowth(object):
 
         self.annularFlux[0] = 1
         self.annularFluxErr[0] = 0
-
-        theta = np.exp(iMTVM.dot(MVy))
-        thetaErr = np.sqrt(np.diag(iMTVM))*theta
 
         self.annularFlux[1:] = theta[0:nRadial-1]
         self.annularFluxErr[1:] = thetaErr[0:nRadial-1]
@@ -597,17 +727,17 @@ class CurveOfGrowth(object):
         (weighted) mean or median; the choice is set by finalEstimationAlgorithm.  Empirically, better results
         seem to be returned by using mean or median.
         """
-        #
-        # Make an initial estimate without clipping
-        #
-        self._estimate()
-
         try:
             maxRChi2[0]
         except IndexError:
             maxRChi2 = [maxRChi2]
 
-        for maxRChi2 in maxRChi2:
+        #
+        # Make an initial estimate without clipping
+        #
+        self._estimate(doErrors=(len(maxRChi2) == 0))
+
+        for i, maxRChi2Value in enumerate(maxRChi2):
             #
             # Estimate a robust average of the input aperture fluxes in each annulus
             #
@@ -622,7 +752,7 @@ class CurveOfGrowth(object):
 
                 self.rchi2 = chi2/(prof.npoint - prof.i0 - 1)
 
-                if self.rchi2 > maxRChi2 or not np.all(np.isfinite(chi)):
+                if self.rchi2 > maxRChi2Value or not np.all(np.isfinite(chi)):
                     self.badProfs.append(prof)
                 else:
                     goodProfs.append(prof)
@@ -631,7 +761,7 @@ class CurveOfGrowth(object):
             #
             # Estimate the curve of growth having discarded those suspect objects
             #
-            self._estimate()
+            self._estimate(doErrors=(i + 1 == len(maxRChi2)))
         #
         # Record which sources were actually used
         #
@@ -676,21 +806,7 @@ class CurveOfGrowth(object):
         \param inner     Index of the inner radius (numerator of the ratio).
         \param outer     Index of the outer radius (denominator of the ratio).
         """
-        if outer < inner:
-            raise ValueError("Inner index (%s) is larger than outer index (%d)" % (inner, outer))
-        fInner = self.apertureFlux[inner]
-        fOuter = self.apertureFlux[outer]
-        ratio = fInner / fOuter
-        # To compute error on the ratio, we propagate errors on:
-        #  ratio = fInner / (fInner + delta)
-        # where delta = fOuter - fInner
-        # because the errors on f_inner and delta are independent,
-        # while the errors on f_outer and f_inner are not.
-        fInnerVar = self.apertureFluxErr[inner]**2
-        delta = fOuter - fInner
-        deltaVar = self.apertureFluxErr[outer]**2 - fInnerVar
-        ratioErr = (fInnerVar*delta**2 + deltaVar*fInner**2)**0.5 / fOuter**2
-        return ratio, ratioErr
+        return self.result.getRatio(inner, outer)
 
     def _estimateMeanAnnularFlux(self):
         """
@@ -745,14 +861,13 @@ class CurveOfGrowth(object):
         
         flux = source.get("flux.aperture")
         fluxErr = source.get("flux.aperture.err")
-        nInterpPixel = source.get("flux.aperture.nInterpolatedPixel")
 
         if len(self.annularFlux) < nRadial:
-            nRadial = annularFlux
+            nRadial = len(self.annularFlux)
 
         if rMax is not None:            # maximum radius to use
             for i in range(i0, nRadial):
-                if r[i + 1] > rMax:
+                if self.radii[i + 1] > rMax:
                     break
 
                 if i > i0:                      # don't entirely trim overlap
@@ -891,6 +1006,24 @@ class CurveOfGrowth(object):
 
         return fig
     
+    def apply(self, *args, **kwargs):
+        """!Apply the results of the curve of growth analysis to a source catalog
+
+        We deduce the correction that needs to be applied from inspecting the
+        'measurementConfig' (a SourceMeasurementConfig) and finding the aperture
+        being used for calibration.  The correction is then applied to the flux
+        and error of each of the specified 'algorithms'. If 'algorithms' is None,
+        the set of algorithms in the aperture correction registry is used.
+
+        \param measurementConfig    Configuration for source measurement
+        \param catalog    Source catalog to have flux measurements corrected
+        \param algorithms    Iterable of algorithms to correct, or None
+        \param calib    Calib object to be corrected
+        \param apCorr    Aperture corrections to be corrected
+        \param log    Log object for logging the factor that's applied
+        """
+        return self.result.apply(*args, **kwargs)
+
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 class SingleProfile(object):
