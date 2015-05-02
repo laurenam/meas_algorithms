@@ -38,7 +38,7 @@ except ImportError as e:
 __all__ = ("CurveOfGrowthMeasurementConfig", "CurveOfGrowthMeasurementTask", "CurveOfGrowth")
 
 class CurveOfGrowthMeasurementConfig(pex_config.Config):
-    nAperture = pex_config.ListField(
+    nAperture = pex_config.Field(
         doc = "Maximum number of aperture fluxes to use (all, if None)",
         dtype = int,
         default = None
