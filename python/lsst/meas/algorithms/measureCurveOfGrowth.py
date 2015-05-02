@@ -413,6 +413,10 @@ class CurveOfGrowthResult(object):
     the CurveOfGrowthResult is picklable, so it can be stored or transferred.
     """
 
+    MATCHES_FIRST = 1 # apply() only to first element of matches
+    MATCHES_SECOND = 2 # apply() only to second element of matches
+    MATCHES_BOTH = 3 # apply() to both elements of matches
+
     def __init__(self, apertureFlux, apertureFluxErr):
         """!Constructor
 
@@ -444,7 +448,8 @@ class CurveOfGrowthResult(object):
         ratioErr = (fInnerVar*delta**2 + deltaVar*fInner**2)**0.5 / fOuter**2
         return ratio, ratioErr
 
-    def apply(self, measurementConfig, catalog=None, algorithms=None, calib=None, apCorr=None, log=None):
+    def apply(self, measurementConfig, catalog=None, matches=None, algorithms=None, matchesType=None,
+              calib=None, apCorr=None, log=None):
         """!Apply the results of the curve of growth analysis to a source catalog
 
         We deduce the correction that needs to be applied from inspecting the
@@ -465,9 +470,18 @@ class CurveOfGrowthResult(object):
           * CURVE_OF_GROWTH.CORRECTION.RADIUS.TO: outer radius
           * CURVE_OF_GROWTH.CORRECTION.ALGORITHMS: list of algorithms corrected
 
+        If you provide 'matches' to be corrected, you may also specify which part
+        of the matches will be corrected through the 'matchesType' parameter:
+          * CurveOfGrowthResult.MATCHES_FIRST: correct only first elements
+          * CurveOfGrowthResult.MATCHES_SECOND: correct only second elements
+          * CurveOfGrowthResult.MATCHES_BOTH: correct both first and second elements
+        If this parameter is None, it defaults to MATCHES_BOTH.
+
         \param measurementConfig    Configuration for source measurement
         \param catalog    Source catalog to have flux measurements corrected
+        \param matches    Source matches to be corrected
         \param algorithms    Iterable of algorithms to correct, or None
+        \param matchesType    Which element of matches to correct, or None for both
         \param calib    Calib object to be corrected
         \param apCorr    Aperture corrections to be corrected
         \param log    Log object for logging the factor that's applied
@@ -491,7 +505,7 @@ class CurveOfGrowthResult(object):
         ratio, ratioErr = self.getRatio(calibIndex, corrIndex)
         if log:
             log.info("Applying curve of growth (radius %.1f --> %.1f): %f (+/- %f)" %
-                     (radius, apertures[corrIndex], ratio, ratioErr))
+                     (apertures[calibIndex], apertures[corrIndex], ratio, ratioErr))
 
         if algorithms is None:
             algorithms = getApCorrRegistry()
@@ -506,6 +520,24 @@ class CurveOfGrowthResult(object):
             metadata.set("CURVE_OF_GROWTH.CORRECTION.RADIUS.FROM", radius)
             metadata.set("CURVE_OF_GROWTH.CORRECTION.RADIUS.TO", apertures[corrIndex])
             metadata.set("CURVE_OF_GROWTH.CORRECTION.ALGORITHMS", list(algorithms))
+
+        if matches is not None:
+            def correctMatches(srcList):
+                schema = None
+                for src in srcList:
+                    if schema is None:
+                        schema = src.schema
+                    else:
+                        assert schema == src.schema, "Schema mismatch"
+                for alg in algorithms:
+                    if alg in schema:
+                        key = schema[alg].asKey()
+                        for src in srcList:
+                            src[key] /= ratio
+            if matchesType is None or matchesType in (self.MATCH_FIRST, self.MATCH_BOTH):
+                correctMatches([match.first for match in matches])
+            if matchesType is None or matchesType in (self.MATCH_SECOND, self.MATCH_BOTH):
+                correctMatches([match.second for match in matches])
 
         if calib is not None:
             # With this correction our flux measurements are brighter, so to have the same calibrated flux for
