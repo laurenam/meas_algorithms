@@ -54,8 +54,7 @@ class CurveOfGrowthMeasurementConfig(pex_config.Config):
     classificationMax = pex_config.Field(
         doc = "Maximum value of classification.extendedness for an object to be included in curve of growth",
         dtype = float,
-        default = 0.5,
-        check = lambda x: x >= 0.0,
+        default = np.nan,
     )
     psfFluxMin = pex_config.Field(
         doc = "Minimum value of psf.flux for an object to be included in curve of growth",
@@ -72,7 +71,7 @@ class CurveOfGrowthMeasurementConfig(pex_config.Config):
     nNonSaturated =  pex_config.Field(
         doc = "How many of the brightest non-saturated candidates to use (0 => all)",
         dtype = int,
-        default = 100,
+        default = 200,
         check = lambda x: x >= 0,
     )
     skyNoiseFloor =  pex_config.Field(
@@ -88,7 +87,7 @@ class CurveOfGrowthMeasurementConfig(pex_config.Config):
         neighbouring objects.  The real solution here is to write cleverer aperture flux code, \'a la SDSS
         """,
         dtype = float,
-        default = [10000, 1000, 100],
+        default = [10000, 1000],
         itemCheck = lambda x: x > 0,
     )
     finalEstimationAlgorithm = pex_config.ChoiceField(
@@ -321,7 +320,8 @@ the exposure.
             for s in catalog:
                 if (deblend_nchild is not None and s.get(deblend_nchild) > 0) or \
                    s.getPsfFlux() < self.config.psfFluxMin or \
-                   s.get(classification_extendedness) > self.config.classificationMax:
+                   (np.isfinite(self.config.classificationMax) and
+                    s.get(classification_extendedness) > self.config.classificationMax):
                     continue
 
                 for badFlag in badFlags:
@@ -429,9 +429,14 @@ class CurveOfGrowthResult(object):
     def getRatio(self, inner, outer):
         """!Return the flux ratio between two radii and the error on the ratio.
 
-        \param inner     Index of the inner radius (numerator of the ratio).
-        \param outer     Index of the outer radius (denominator of the ratio).
+        \param inner     Index of the inner radius (numerator of the ratio); if -ve relative to end of array
+        \param outer     Index of the outer radius (denominator of the ratio); if -ve relative to end of array
         """
+        if inner < 0:
+            inner += len(self.apertureFlux)
+        if outer < 0:
+            outer += len(self.apertureFlux)
+
         if outer < inner:
             raise ValueError("Inner index (%s) is larger than outer index (%d)" % (inner, outer))
         fInner = self.apertureFlux[inner]
@@ -911,8 +916,8 @@ class CurveOfGrowth(object):
     def getRatio(self, inner, outer):
         """!Return the flux ratio between two radii and the error on the ratio.
 
-        \param inner     Index of the inner radius (numerator of the ratio).
-        \param outer     Index of the outer radius (denominator of the ratio).
+        \param inner     Index of the inner radius (numerator of the ratio); if -ve relative to end of array
+        \param outer     Index of the outer radius (denominator of the ratio); if -ve relative to end of array
         """
         return self.result.getRatio(inner, outer)
 
@@ -1242,5 +1247,5 @@ class SingleProfile(object):
         #
         if skyNoiseFloor:
             goodSlice = slice(self.i0, self.npoint)
-            self.annularFluxErr[goodSlice] = np.hypot(self.annularFluxErr[goodSlice],
-                                                      self.annularArea[goodSlice]*skyNoiseFloor**2)
+            self.annularFluxErr[goodSlice] = np.sqrt(self.annularFluxErr[goodSlice]**2 + 
+                                                     self.annularArea[goodSlice]*skyNoiseFloor**2)
