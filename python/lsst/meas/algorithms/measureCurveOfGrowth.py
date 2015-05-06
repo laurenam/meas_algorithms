@@ -38,6 +38,11 @@ except ImportError as e:
 __all__ = ("CurveOfGrowthMeasurementConfig", "CurveOfGrowthMeasurementTask", "CurveOfGrowth")
 
 class CurveOfGrowthMeasurementConfig(pex_config.Config):
+    nAperture = pex_config.ListField(
+        doc = "Maximum number of aperture fluxes to use (all, if None)",
+        dtype = int,
+        default = None
+        )
     badFlags = pex_config.ListField(
         doc = """List of flags which cause a source to be rejected as bad
 
@@ -58,6 +63,24 @@ class CurveOfGrowthMeasurementConfig(pex_config.Config):
         default = 5e4,
         check = lambda x: x >= 0.0,
     )
+    nSaturated =  pex_config.Field(
+        doc = "How many of the brightest saturated candidates to use (0 => all)",
+        dtype = int,
+        default = 500,
+        check = lambda x: x >= 0,
+    )
+    nNonSaturated =  pex_config.Field(
+        doc = "How many of the brightest non-saturated candidates to use (0 => all)",
+        dtype = int,
+        default = 100,
+        check = lambda x: x >= 0,
+    )
+    skyNoiseFloor =  pex_config.Field(
+        doc = "The per-pixel std. dev. of our knowledge of the sky, to be added in quadrature",
+        dtype = float,
+        default = 0.0,
+        check = lambda x: x >= 0,
+    )
     maxRChi2 = pex_config.ListField(
         doc = """List of values of reduced chi^2 that should be applied in order to clip sources
 
@@ -65,7 +88,7 @@ class CurveOfGrowthMeasurementConfig(pex_config.Config):
         neighbouring objects.  The real solution here is to write cleverer aperture flux code, \'a la SDSS
         """,
         dtype = float,
-        default = [100, 75, 50, 20],
+        default = [10000, 1000, 100],
         itemCheck = lambda x: x > 0,
     )
     finalEstimationAlgorithm = pex_config.ChoiceField(
@@ -289,7 +312,10 @@ the exposure.
         # Now we've chosen our sources, add them to the nascent curve of growth
         cog = CurveOfGrowth(self.curveOfGrowthCandidateKey,
                             self.curveOfGrowthUsedKey,
-                            self.config.fracInterpolatedMax, self.config.minAnnularFlux)
+                            self.config.fracInterpolatedMax, self.config.minAnnularFlux,
+                            nAperture=self.config.nAperture,
+                            skyNoiseFloor=self.config.skyNoiseFloor
+        )
 
         for catalog in catalogList:
             for s in catalog:
@@ -307,7 +333,9 @@ the exposure.
         # and actually estimate it
         #
         cog.estimate(maxRChi2=self.config.maxRChi2,
-                              finalEstimationAlgorithm=self.config.finalEstimationAlgorithm)
+                     nSaturated=self.config.nSaturated,
+                     nNonSaturated=self.config.nNonSaturated,
+                     finalEstimationAlgorithm=self.config.finalEstimationAlgorithm)
         #
         if lsstDebug.Info(__name__).display:
             if lsstDebug.Info(__name__).displayImage:
@@ -492,13 +520,15 @@ class CurveOfGrowthResult(object):
 
 class CurveOfGrowth(object):
     def __init__(self, curveOfGrowthCandidateKey=None, curveOfGrowthUsedKey=None,
-                 fracInterpolatedMax=0.1, minAnnularFlux=0):
+                 fracInterpolatedMax=0.1, minAnnularFlux=0, nAperture=None, skyNoiseFloor=0.0):
         """Represent a curve of growth generated from a number of stars
 
         \param curveOfGrowthCandidateKey Key to use to flag candidate objects to use for CurveOfGrowth
         \param curveOfGrowthUsedKey  Key to use to flag objects actually used for CurveOfGrowth
         \param fracInterpolatedMax Maximum fraction of interpolated pixels allowable in an annulus
         \param minAnnularFlux Minimum acceptable flux-per-pixel
+        \param nAperture Maximum number of aperture fluxes to use (all, if None)
+        \param skyNoiseFloor The per-pixel std. dev. of our knowledge of the sky, to be added in quadrature
 
         We need to generate curves of growth of stars, and unfortunately stars bright enough to
         measure halo properties are saturated, so a simple addition doesn't suffice. Usage:
@@ -523,6 +553,7 @@ class CurveOfGrowth(object):
         self.minAnnularFlux = minAnnularFlux
 
         self.n = 0
+        self.nAperture = nAperture
         self.radii = None
         self.area = None
         self.annularFlux = None
@@ -531,6 +562,7 @@ class CurveOfGrowth(object):
         self.apertureFluxErr = None
         self.psfFlux = None
         
+        self.skyNoiseFloor = skyNoiseFloor
         self.profs = []                 # good profiles, added by addSource
         self.badProfs = []
         self._result = None     # cache of CurveOfGrowthResult object
@@ -560,17 +592,20 @@ class CurveOfGrowth(object):
         if self.radii is None:
             md = source.getTable().getMetadata()
             name = "flux_aperture_radii"
-            if md.exists(name):
-                self.radii = list(md.get(name)) # outer radius
-            else:
+            if not md.exists(name):
                 raise RuntimeError("You must provide %s in the catalogue metadata" % name)
+
+            self.radii = list(md.get(name)) # outer radius of apertures
+            if self.nAperture:
+                self.radii = self.radii[0:self.nAperture]
 
             self.area = np.pi*(np.array(self.radii + [0])**2 -
                                np.array([0] + self.radii)**2)[0:-1] # areas of annuli
             self.radii = np.array(self.radii)
 
         try:
-            self.profs.append(SingleProfile(source, self.fracInterpolatedMax, self.minAnnularFlux))
+            self.profs.append(SingleProfile(source, self.fracInterpolatedMax, self.minAnnularFlux,
+                                            self.nAperture, self.skyNoiseFloor))
         except IndexError:             # no valid points
             pass
 
@@ -583,7 +618,7 @@ class CurveOfGrowth(object):
         by a straight solution of the MLE problem (i.e. no clipping)
         """
         nProf = len(self.profs)         # number of objects with measured aperture fluxes
-        assert nProf > 0, "There is at least one source to process"
+        assert nProf > 0, "There must be at least one source to process"
 
         # determine the radial extent of the data, and the first good value
         i0 = min([p.i0 for p in self.profs])
@@ -670,7 +705,7 @@ class CurveOfGrowth(object):
                 thetaErr = np.sqrt(np.diag(iMTVM))*theta
             else:
                 theta = np.exp(np.linalg.solve(MTVM, MVy))
-                thetaErr = np.ones_like(theta)*np.nan
+                thetaErr = np.ones_like(theta)
         except Exception as e:
             raise RuntimeError("Curve of growth matrix is singular: %s" % e)
 
@@ -717,16 +752,48 @@ class CurveOfGrowth(object):
         else:
             self.psfFlux /= s
 
-    def estimate(self, maxRChi2=[100], finalEstimationAlgorithm="mean"):
+    def estimate(self, maxRChi2=[100], nSaturated=None, nNonSaturated=None, finalEstimationAlgorithm="mean"):
         """!Given a CurveOfGrowth filled with aperture photometry from sources, derive the curve of growth
 
         \param maxRChi2 clip the input objects with a reduced chi^2 larger than this (may be a list)
+        \param nSaturated How many of the brightest saturated candidates to use
+        \param nNonSaturated How many of the brightest non-saturated candidates to use
         \param finalEstimationAlgorithm How to estimate the final apertureFluxes (None, "mean", "median")
 
         The final returned apertureFlux may be the one estimated from MLE fit, or the bin-by-bin
         (weighted) mean or median; the choice is set by finalEstimationAlgorithm.  Empirically, better results
         seem to be returned by using mean or median.
         """
+        #
+        # Choose the nSaturated brightest saturated and the brightest nNonSaturated non-saturated candidates
+        #
+        if nSaturated or nNonSaturated:
+            try:
+                saturatedKey = self.profs[0].source.getSchema().find("flags.pixel.saturated.center").getKey()
+            except KeyError:
+                saturatedKey = None
+
+            saturated, nonSaturated = [], []
+            for prof in self.profs:
+                s = prof.source
+                if saturatedKey and s.get(saturatedKey):
+                    saturated.append([prof, s.getApFlux()])
+                else:
+                    nonSaturated.append([prof, s.getPsfFlux()])
+
+            def byFlux(a, b):
+                return cmp(a[1], b[1])
+
+            saturated.sort(byFlux)
+            if nSaturated:
+                saturated = saturated[:nSaturated]
+
+            nonSaturated.sort(byFlux)
+            if nNonSaturated:
+                nonSaturated = nonSaturated[:nNonSaturated]
+
+            self.profs = [prof for prof, flux in (saturated + nonSaturated)]
+
         try:
             maxRChi2[0]
         except IndexError:
@@ -737,6 +804,9 @@ class CurveOfGrowth(object):
         #
         self._estimate(doErrors=(len(maxRChi2) == 0))
 
+        #
+        # Now estimate with clipping
+        #
         for i, maxRChi2Value in enumerate(maxRChi2):
             #
             # Estimate a robust average of the input aperture fluxes in each annulus
@@ -746,8 +816,10 @@ class CurveOfGrowth(object):
             goodProfs = []
             for prof in self.profs:
                 goodSlice = slice(prof.i0, prof.npoint)
-                chi = ((prof.annularFlux[goodSlice] - prof.alpha*robustAnnularFlux[goodSlice])/
-                       prof.annularFluxErr[goodSlice])
+
+                annErr = np.hypot(prof.annularFluxErr[goodSlice], prof.alphaErr*robustAnnularFlux[goodSlice])
+
+                chi = (prof.annularFlux[goodSlice] - prof.alpha*robustAnnularFlux[goodSlice])/annErr
                 chi2 = np.sum(chi**2)
 
                 self.rchi2 = chi2/(prof.npoint - prof.i0 - 1)
@@ -768,6 +840,8 @@ class CurveOfGrowth(object):
         if self.curveOfGrowthUsedKey:
             for prof in self.profs:
                 prof.source.set(self.curveOfGrowthUsedKey, True)
+            for prof in self.badProfs:
+                prof.source.set(self.curveOfGrowthUsedKey, False)
 
         if finalEstimationAlgorithm:
             if finalEstimationAlgorithm == "mean":
@@ -786,6 +860,8 @@ class CurveOfGrowth(object):
 
             for prof in self.profs:
                 prof.alpha /= scale
+
+        self.radii = self.radii[0:len(self.annularFlux)] # maybe none of the profiles were complete
 
     def get(self, what):
         """!Return the estimated aperture flux and its error
@@ -891,12 +967,18 @@ class CurveOfGrowth(object):
 
         return self.psfFlux*sumObj/sumComp
 
-    def plot(self, normalize=True, showRadialProfile=False, alpha=0.1):
+    def plot(self, normalize=True, showRadialProfile=False, alpha=0.1, yscaleType=None,
+             minLabelledValue=None, showInputs=True, clf=True, title=None):
         """!Plot the fit curve of growth and the input aperture fluxes using matplotlib
         
         \param normalize If True, normalize all the constituent sources to constant flux
         \param showRadialProfile If True, plot the surface brightness rather than the curve of growth
         \param alpha transparency for matplotlib
+        \param yscaleType How to plot y axis (None, 'log' or 'linear')
+        \param minLabelledValue Curves with final values larger than minLabelledValue are labelled
+        \param showInputs Show the objects used to construct the curve of growth
+        \param clf Clear the figure before plotting
+        \param title A title to use (None: number of input objects)
         """
         mpAlpha = alpha                 # we use the name alpha for other things
 
@@ -907,27 +989,36 @@ class CurveOfGrowth(object):
         global fig
         if not fig:
             fig = plt.figure()
-        else:
+        elif clf:
             fig.clf()
 
         axes = fig.add_axes((0.1, 0.1, 0.85, 0.80))
 
         if showRadialProfile:
-            def profileFunction(annularFlux, annularFluxErr=None):
-                prof = annularFlux/self.area
+            if not yscaleType:
+                yscaleType = 'log'
+            def profileFunction(annularFlux, annularFluxErr=None, prof=None, cogAnnularFlux=None):
+                profile = annularFlux/self.area
 
                 if annularFluxErr is None:
-                    return prof
+                    return profile
                 else:
-                    return prof, annularFluxErr/self.area
+                    return profile, annularFluxErr/self.area
         else:
-            def profileFunction(annularFlux, annularFluxErr=None):
-                prof = np.cumsum(annularFlux)
+            if not yscaleType:
+                yscaleType = 'linear'
+
+            def profileFunction(annularFlux, annularFluxErr=None, prof=None, cogAnnularFlux=None):
+                if prof and prof.i0 > 0 and cogAnnularFlux is not None:
+                    annularFlux = annularFlux[:] 
+                    annularFlux[0:prof.i0] = prof.alpha*cogAnnularFlux[0:prof.i0]
+
+                profile = np.cumsum(annularFlux)
 
                 if annularFluxErr is None:
-                    return prof
+                    return profile
                 else:
-                    return prof, np.cumsum(annularFluxErr)
+                    return profile, np.cumsum(annularFluxErr)
 
         robustFlux = profileFunction(self._estimateMedianAnnularFlux())
 
@@ -950,6 +1041,9 @@ class CurveOfGrowth(object):
             fluxPM[:nr] = flux + fluxErr
             fluxPM[nr:] = list(reversed(flux - fluxErr))
 
+            if yscaleType == 'log':     # we shouldn't have to do this...
+                fluxPM = np.where(fluxPM > 0, np.log(fluxPM), np.log(1e-6))
+
             p = plt.Polygon(zip(r, fluxPM), alpha=0.4)
             axes.add_artist(p)
 
@@ -960,15 +1054,20 @@ class CurveOfGrowth(object):
 
         nlabel = 0
         for i, prof in enumerate(sorted(self.profs, lambda a, b: cmp(b.alpha, a.alpha)), -len(self.profs)/2):
+            if not showInputs:
+                continue
+
             good = slice(prof.i0, prof.npoint)
 
-            flux, fluxErr = profileFunction(prof.annularFlux, prof.annularFluxErr)
+            flux, fluxErr = profileFunction(prof.annularFlux, prof.annularFluxErr, prof, self.annularFlux)
             if normalize:
                 flux *= scale/prof.alpha
                 fluxErr *= scale/prof.alpha
 
-            label = prof.source.getId() if (flux[good][-1] > (10 if normalize else 4e5)) else None
-            lines = axes.errorbar(self.radii[good]+0.01*i, flux[good], yerr=fluxErr[good],
+            label = None
+            if minLabelledValue is not None and flux[good][-1] > minLabelledValue:
+                label = prof.source.getId() & 0xffff
+            lines = axes.errorbar(self.radii[good] + 0.1/len(self.profs)*i, flux[good], yerr=fluxErr[good],
                                   fmt='o', label=label, alpha=mpAlpha)
             nlabel += (label != None)
 
@@ -991,8 +1090,6 @@ class CurveOfGrowth(object):
             if legend:
                 legend.draggable(True)
 
-            axes.set_xlim(None, 75)
-            
         axes.set_xlabel("Radius (pixels)")
         if showRadialProfile:
             ylabel = "Radial profile"
@@ -1003,6 +1100,10 @@ class CurveOfGrowth(object):
             ylabel += " (normalised)"
 
         axes.set_ylabel(ylabel)
+        axes.set_yscale(yscaleType)
+        if title is None:
+            title = "%d objects" % len(self.profs)
+        axes.set_title(title)
 
         return fig
     
@@ -1027,12 +1128,14 @@ class CurveOfGrowth(object):
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 class SingleProfile(object):
-    def __init__(self, source, fracInterpolatedMax, minAnnularFlux):
+    def __init__(self, source, fracInterpolatedMax, minAnnularFlux, nAperture=None, skyNoiseFloor=0):
         """!The aperture and annular fluxes of a single Source, which define points on a radial profile
 
         \param source  A measured Source
         \param fracInterpolatedMax Maximum fraction of interpolated pixels allowable in an annulus
         \param minAnnularFlux Minimum acceptable flux-per-pixel
+        \param nAperture Maximum number of aperture fluxes to use (all, if None)
+        \param skyNoiseFloor  The per-pixel std. dev. of our knowledge of the sky, to be added in quadrature
         """
         radii = source.getTable().getMetadata().get("flux_aperture_radii")
         #
@@ -1048,6 +1151,12 @@ class SingleProfile(object):
         fluxErr = source.get("flux.aperture.err")
         nInterpPixel = source.get("flux.aperture.nInterpolatedPixel")
 
+        if nAperture:
+            radii = radii[0:nAperture]
+            flux = flux[0:nAperture]
+            fluxErr = fluxErr[0:nAperture]
+            nInterpPixel = nInterpPixel[0:nAperture]
+
         self.i0 = None                  # first good value
         self.annularFlux = np.empty_like(radii) + np.nan    # star's mean annular fluxes
         self.annularFluxErr = np.empty_like(radii) # errors in annularFlux
@@ -1059,6 +1168,9 @@ class SingleProfile(object):
         nInterpOld = 0                # number of interpolated pixels inside areaOld
 
         nRadial = source.get("flux.aperture.nProfile")
+        if nAperture and nRadial > nAperture:
+            nRadial = nAperture
+
         if nRadial == 0:
             raise IndexError("Source %d has no aperture measurements" % source.getId())
         
@@ -1093,3 +1205,10 @@ class SingleProfile(object):
 
         if self.i0 is None or self.npoint <= self.i0 + 1:   # no new information (1 point's useless)
             raise IndexError("Source %d has <= 1 valid aperture measurement" % source.getId())
+        #
+        # Impose a minimum variance due to unmodelled sky noise
+        #
+        if skyNoiseFloor:
+            goodSlice = slice(self.i0, self.npoint)
+            self.annularFluxErr[goodSlice] = np.hypot(self.annularFluxErr[goodSlice],
+                                                      self.annularArea[goodSlice]*skyNoiseFloor**2)
