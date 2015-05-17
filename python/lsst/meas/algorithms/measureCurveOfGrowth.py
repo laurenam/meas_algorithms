@@ -41,7 +41,8 @@ class CurveOfGrowthMeasurementConfig(pex_config.Config):
     nAperture = pex_config.Field(
         doc = "Maximum number of aperture fluxes to use (all, if None)",
         dtype = int,
-        default = None
+        default = None,
+        optional = True
         )
     badFlags = pex_config.ListField(
         doc = """List of flags which cause a source to be rejected as bad
