@@ -262,8 +262,6 @@ class SourceMeasurementTask(pipeBase.Task):
         self.log.info(msg)
         self.config.slots.setupTable(sources.table, prefix=self.config.prefix)
 
-        self.preMeasureHook(exposure, sources)
-
         # "noiseout": we will replace all the pixels within detected
         # Footprints with noise, and then add sources in one at a
         # time, measure them, then replace with noise again.  The idea
@@ -271,23 +269,10 @@ class SourceMeasurementTask(pipeBase.Task):
         # Footprint, and we don't want other sources to interfere with
         # the measurements.  The faint wings of sources are still
         # there, but that's life.
-        noiseout = self.config.doReplaceWithNoise
-        if noiseout:
-            self.replaceWithNoise.begin(exposure, sources, noiseImage, noiseMeanVar)
+        with ExposureContext(self, exposure, sources, noiseImage, noiseMeanVar), ds9.Buffering():
             # At this point the whole image should just look like noise.
-
-        # Call the hook, with source id = -1, before we measure anything.
-        # (this is *after* the sources have been replaced by noise, if noiseout)
-        self.preSingleMeasureHook(exposure, sources, -1)
-
-        with ds9.Buffering():
             for i, (source, ref) in enumerate(zip(sources, references)):
-                if noiseout:
-                    self.replaceWithNoise.insertSource(exposure, i)
-
-                self.preSingleMeasureHook(exposure, sources, i)
-
-                try:
+                with SourceContext(self, exposure, sources, i):
                     # Make the measurement; note that we set refineCenter=True, but it
                     # only takes effect if config.centroider != None.
                     if ref is None:
@@ -296,24 +281,84 @@ class SourceMeasurementTask(pipeBase.Task):
                     else:
                         self.measurer.applyForced(source, exposure, ref, refWcs, True,
                                                   beginPriority, endPriority)
-                except MemoryError:
-                    raise  # always let MemoryError propagate up, as continuing just causes
-                           # more problems
-                except Exception as err:
-                    self.log.warn("Error measuring source %s at %s,%s: %s"
-                                  % (source.getId(), source.getX(), source.getY(), err))
-
-                self.postSingleMeasureHook(exposure, sources, i)
-
-                if noiseout:
-                    # Replace this source's pixels by noise again.
-                    self.replaceWithNoise.removeSource(exposure, sources, source)
-
-        if noiseout:
-            # Put the exposure back the way it was
-            self.replaceWithNoise.end(exposure, sources)
-
-        self.postMeasureHook(exposure, sources)
 
     # Alias for backwards compatibility
     run = measure
+
+class ExposureContext(object):
+    """Context manager for measurement at exposure level
+
+    At the exposure level, we replace the entire exposure with noise (if configured)
+    and call the exposure-level debugging measurement hooks in the SourceMeasurementTask.
+    """
+
+    def __init__(self, task, exposure, sources, *args, **kwargs):
+        """Constructor
+
+        @param task  the SourceMeasurementTask
+        @param exposure  the exposure we're measuring
+        @param sources  the catalog of sources we're measuring
+        @param args,kwargs  additional arguments for task.replaceWithNoise.begin
+        """
+        self._task = task
+        self._exposure = exposure
+        self._sources = sources
+        self._args = args
+        self._kwargs = kwargs
+
+    def __enter__(self):
+        self._task.preMeasureHook(self._exposure, self._sources)
+        if self._task.config.doReplaceWithNoise:
+            self._task.replaceWithNoise.begin(self._exposure, self._sources, *self._args, **self._kwargs)
+        # Call the hook, with source id = -1, before we measure anything.
+        # (this is *after* the sources have been replaced by noise, if noiseout)
+        self._task.preSingleMeasureHook(self._exposure, self._sources, -1)
+
+    def __exit__(self, *excInfo):
+        if self._task.config.doReplaceWithNoise:
+            self._task.replaceWithNoise.end(self._exposure, self._sources)
+        self._task.postMeasureHook(self._exposure, self._sources)
+
+
+class SourceContext(object):
+    """Context manager for individual source measurement
+
+    At the individual source level, we restore the source into the noised-out image
+    (if configured) and call the source-level debugging measurement hooks in the
+    SourceMeasurementTask.
+    """
+
+    def __init__(self, task, exposure, sources, index):
+        """Constructor
+
+        @param task  the SourceMeasurementTask
+        @param exposure  the exposure we're measuring
+        @param sources  the catalog of sources we're measuring
+        @param index  the index of the source of interest in the catalog of sources
+        """
+        self._task = task
+        self._exposure = exposure
+        self._sources = sources
+        self._index = index
+
+    def __enter__(self):
+        if self._task.config.doReplaceWithNoise:
+            self._task.replaceWithNoise.insertSource(self._exposure, self._index)
+        self._task.preSingleMeasureHook(self._exposure, self._sources, self._index)
+
+    def __exit__(self, cls, exc, traceback):
+        if self._task.config.doReplaceWithNoise:
+            self._task.replaceWithNoise.removeSource(self._exposure, self._sources, self._sources[self._index])
+        self._task.postSingleMeasureHook(self._exposure, self._sources, self._index)
+
+        if exc is None:
+            return
+
+        if issubclass(cls, MemoryError):
+            # always let MemoryError propagate up, as continuing just causes more problems
+            return False # Don't suppress exception
+
+        source = self._sources[self._index]
+        self._task.log.warn("Error measuring source %s at %s,%s: %s" %
+                            (source.getId(), source.getX(), source.getY(), exc))
+        return True # Suppress exception
