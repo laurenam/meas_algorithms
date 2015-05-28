@@ -129,10 +129,16 @@ class MeasureApCorrTask(lsst.pipe.base.Task):
             y = numpy.zeros(len(subset2), dtype=float)
             apCorrData = numpy.zeros(len(subset2), dtype=float)
             indices = numpy.arange(len(subset2), dtype=int)
+            referenceFluxErr = numpy.zeros(len(subset2), dtype=float)
+            measuredFluxErr = numpy.zeros(len(subset2), dtype=float)
+            measuredFlux = numpy.zeros(len(subset2), dtype=float)
             for n, record in enumerate(subset2):
                 x[n] = record.getX()
                 y[n] = record.getY()
                 apCorrData[n] = record.get(self.reference.flux)/record.get(keys.flux)
+                referenceFluxErr[n] = record.get(self.reference.err)
+                measuredFluxErr[n] = record.get(keys.err)
+                measuredFlux[n] = record.get(keys.flux)
 
             for _i in range(self.config.numIter):
 
@@ -143,7 +149,8 @@ class MeasureApCorrTask(lsst.pipe.base.Task):
                 # corrected to-be-corrected flux.
                 apCorrDiffs = apCorrField.evaluate(x, y)
                 apCorrDiffs -= apCorrData
-                apCorrErr = numpy.mean(apCorrDiffs**2)**0.5
+                # Note. Subtract the degrees of freedom used on the fit.
+                apCorrErr = numpy.sum((apCorrDiffs**2)/(len(apCorrDiffs)-ctrl.computeSize()))**0.5
 
                 # Clip bad data points
                 apCorrDiffLim = self.config.numSigmaClip * apCorrErr
@@ -152,12 +159,25 @@ class MeasureApCorrTask(lsst.pipe.base.Task):
                 y = y[keep]
                 apCorrData = apCorrData[keep]
                 indices = indices[keep]
+                referenceFluxErr = referenceFluxErr[keep]
+                measuredFluxErr = measuredFluxErr[keep]
+                measuredFlux = measuredFlux[keep]
 
             # Final fit after clipping
             apCorrField = lsst.afw.math.ChebyshevBoundedField.fit(bbox, x, y, apCorrData, ctrl)
 
+            apCorrDiffs = apCorrField.evaluate(x, y)
+            apCorrDiffs -= apCorrData
+            # Variance due to measurement errors.
+            apCorrVar = (referenceFluxErr**2 - measuredFluxErr**2) / measuredFlux**2
+            if numpy.sum(apCorrDiffs**2-apCorrVar) > 0:
+                apCorrErr = numpy.sum((apCorrDiffs**2-apCorrVar)/(len(apCorrDiffs)-ctrl.computeSize()))**0.5
+            else:
+                # Temporary set to 0 to avoid NaN
+                apCorrErr = 0.0
+
             self.log.info("Aperture correction for %s: RMS %f from %d" %
-                          (name, numpy.mean((apCorrField.evaluate(x, y) - apCorrData)**2)**0.5, len(indices)))
+                          (name, apCorrErr, len(apCorrDiffs)))
 
             # Save the result in the output map
             # The error is constant spatially (we could imagine being
