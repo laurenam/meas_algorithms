@@ -725,10 +725,9 @@ getFixedMomentsFlux(ImageT const& image,               ///< the data to process
                     double bkgd,                       ///< background level
                     double xcen,                       ///< x-centre of object
                     double ycen,                       ///< y-centre of object
-                    detail::SdssShapeImpl const& shape_ ///< The SdssShape of the object
+                    detail::SdssShapeImpl const& shape ///< The SdssShape of the object
     )
 {
-    detail::SdssShapeImpl shape = shape_; // we need a mutable copy
 
     afwGeom::BoxI const& bbox = set_amom_bbox(image.getWidth(), image.getHeight(), xcen, ycen,
                                               shape.getIxx(), shape.getIxy(), shape.getIyy());
@@ -743,29 +742,39 @@ getFixedMomentsFlux(ImageT const& image,               ///< the data to process
     double const w11 = weights.get<1>();
     double const w12 = weights.get<2>();
     double const w22 = weights.get<3>();
-    bool const interp = shouldInterp(shape.getIxx(), shape.getIyy(), weights.get<0>().second);
 
-    double I0 = 0;                      // amplitude of Gaussian
-    calcmom<true>(ImageAdaptor<ImageT>().getImage(image), xcen, ycen, bbox, bkgd, interp, w11, w12, w22,
-                  &I0, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
-    /*
-     * We have enerything we need, but it isn't quite packaged right; we need an initialised SdssShapeImpl
-     */
-    shape.setI0(I0);
+    // Outputs (w = Gaussfloat const yl = y - 0.375;
+    double wzSum = 0.0;    // \sum_i w_i z_i
+    double wwvSum = 0.0;   // \sum_i w_i^2 v_i
 
-    {
-        int ix = static_cast<int>(xcen);
-        int iy = static_cast<int>(ycen);
-        float bkgd_var = 
-            ImageAdaptor<ImageT>().getVariance(image, ix, iy); // XXX Overestimate as it includes object
-
-        detail::SdssShapeImpl::Matrix4 fisher = calc_fisher(shape, bkgd_var); // Fisher matrix 
-
-        shape.setCovar(fisher.inverse());
+    for (int i=bbox.getBeginY(), iEnd=bbox.getEndY(); i < iEnd; ++i) {
+        typename ImageT::const_x_iterator ptr = image.x_at(bbox.getBeginX(), i);
+        float const y = i - ycen;
+        float const y2 = y*y;
+        for (int j=bbox.getBeginX(), jEnd=bbox.getEndX(); j < jEnd; ++j, ++ptr) {
+            float const x = j - xcen;
+            float const x2 = x*x;
+            float const xy = x*y;
+            float const expon = x2*w11 + 2*xy*w12 + y2*w22;
+            if (expon <= 14.0) {
+                double const z = ImageAdaptor<ImageT>::getImage(ptr) - bkgd;
+                double const v = ImageAdaptor<ImageT>::getVariance(ptr);
+                double const w = approxExp(-0.5*expon);
+                wzSum += w*z;
+                wwvSum += w*w*v;
+            }
+        }
     }
-    
-    double const scale = shape.getFluxScale();
-    return std::make_pair(shape.getI0()*scale, shape.getI0Err()*scale);
+
+    // wNorm is the continuous version of (\sum_i w_i) / (\sum_i w_i^2); the radius factors out.
+    // This is more efficient than computing the discrete version of this factor, and it actually
+    // produces better results when the source profile is exactly Gaussian (and I assume it's no worse
+    // when it's not a Gaussian).
+    static double const wNorm = 2.0;
+
+    double flux = wzSum*wNorm;
+    double fluxErr = std::sqrt(wwvSum*wNorm);
+    return std::make_pair(flux, fluxErr);
 }
 
 } // detail namespace
