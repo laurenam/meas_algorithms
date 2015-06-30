@@ -717,10 +717,11 @@ bool getAdaptiveMoments(ImageT const& mimage, double bkgd, double xcen, double y
  * The SdssShape algorithm calculates an elliptical Gaussian fit to an object, so the "aperture" is
  * an elliptical Gaussian
  *
- * \returns A std::pair of the flux and its error
+ * \returns A boost::tuple of: the flux, its error, the covariance between this flux and a large
+ *          aperture flux, and the effective area of the weight function.
  */
 template<typename ImageT>
-std::pair<double, double>
+boost::tuple<double, double, double, double>
 getFixedMomentsFlux(ImageT const& image,               ///< the data to process
                     double bkgd,                       ///< background level
                     double xcen,                       ///< x-centre of object
@@ -736,7 +737,7 @@ getFixedMomentsFlux(ImageT const& image,               ///< the data to process
         getWeights(shape.getIxx(), shape.getIxy(), shape.getIyy());
     double const NaN = std::numeric_limits<double>::quiet_NaN();
     if (!weights.get<0>().first) {
-        return std::make_pair(NaN, NaN);
+        return boost::make_tuple(NaN, NaN, NaN, NaN);
     }
 
     double const w11 = weights.get<1>();
@@ -746,6 +747,7 @@ getFixedMomentsFlux(ImageT const& image,               ///< the data to process
     // Outputs (w = Gaussfloat const yl = y - 0.375;
     double wzSum = 0.0;    // \sum_i w_i z_i
     double wwvSum = 0.0;   // \sum_i w_i^2 v_i
+    double wvSum = 0.0;    // \sum_i w_i v_i
 
     for (int i=bbox.getBeginY(), iEnd=bbox.getEndY(); i < iEnd; ++i) {
         typename ImageT::const_x_iterator ptr = image.x_at(bbox.getBeginX(), i);
@@ -762,6 +764,7 @@ getFixedMomentsFlux(ImageT const& image,               ///< the data to process
                 double const w = approxExp(-0.5*expon);
                 wzSum += w*z;
                 wwvSum += w*w*v;
+                wvSum += w*v;
             }
         }
     }
@@ -774,7 +777,9 @@ getFixedMomentsFlux(ImageT const& image,               ///< the data to process
 
     double flux = wzSum*wNorm;
     double fluxErr = std::sqrt(wwvSum*wNorm);
-    return std::make_pair(flux, fluxErr);
+    double apCov = wvSum*wNorm;
+    double nEff = 4.0*afwGeom::PI*std::sqrt(shape.getIxx()*shape.getIyy() - shape.getIxy()*shape.getIxy());
+    return boost::make_tuple(flux, fluxErr, apCov, nEff);
 }
 
 } // detail namespace
@@ -972,7 +977,7 @@ LSST_MEAS_ALGORITHM_PRIVATE_IMPLEMENTATION(SdssShape);
 #define INSTANTIATE_IMAGE(IMAGE) \
     template bool detail::getAdaptiveMoments<IMAGE>( \
         IMAGE const&, double, double, double, double, detail::SdssShapeImpl*, int, float, float, bool); \
-    template std::pair<double, double> detail::getFixedMomentsFlux<IMAGE>( \
+    template boost::tuple<double, double, double, double> detail::getFixedMomentsFlux<IMAGE>( \
         IMAGE const&, double, double, double, detail::SdssShapeImpl const&); \
 
 #define INSTANTIATE_PIXEL(PIXEL) \

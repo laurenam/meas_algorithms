@@ -4,6 +4,8 @@
 
 #include <bitset>
 
+#include <boost/tuple/tuple.hpp>
+
 #include "lsst/afw/geom/ellipses.h"
 #include "lsst/afw/geom/Angle.h"
 
@@ -173,7 +175,7 @@ bool getAdaptiveMoments(
     );
 
 template<typename ImageT>
-std::pair<double, double>
+boost::tuple<double, double, double, double>
 getFixedMomentsFlux(ImageT const& mimage, double bkgd, double xcen, double ycen,
                     detail::SdssShapeImpl const& shape);
 

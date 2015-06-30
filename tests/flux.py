@@ -78,6 +78,10 @@ class FluxTestCase(lsst.utils.tests.TestCase):
         source = self.measure()
         self.assertClose(self.flux, source.get("flux.gaussian"), rtol=1E-4)
         self.assertTrue(numpy.isfinite(source.get("flux.gaussian.err")))
+        # Because variance is a constant 1.0, we can estimate what apCov should be in terms
+        # of the effectiveArea.
+        self.assertClose(source.get("flux.gaussian.effectiveArea"), source.get("flux.gaussian.apCov"),
+                         rtol=1E-3)
 
 def suite():
     """Returns a suite containing all the test cases in this module."""

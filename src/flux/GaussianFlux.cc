@@ -41,6 +41,18 @@ public:
         FluxAlgorithm(
             ctrl, schema,
             "linear fit to an elliptical Gaussian with shape parameters set by adaptive moments"
+        ),
+        _apCovKey(
+            schema.addField<double>(
+                ctrl.name + ".apCov",
+                "uncertainty covariance between this measurement and a large aperture flux"
+            )
+        ),
+        _nEffKey(
+            schema.addField<double>(
+                ctrl.name + ".effectiveArea",
+                "effective area of the weight function used in this measurement"
+            )
         )
     {
         _centroidKey = schema[ctrl.centroid];
@@ -59,7 +71,7 @@ private:
         afw::table::SourceRecord & source,
         afw::image::Exposure<PixelT> const& exposure,
         afw::geom::Point2D const& center,
-        std::pair<double, double> const& measurement ///< Measurement (flux, error) to record
+        boost::tuple<double, double, double, double> const& measurement
         ) const;
 
     template <typename PixelT>
@@ -80,6 +92,8 @@ private:
 
     LSST_MEAS_ALGORITHM_PRIVATE_INTERFACE(GaussianFlux);
 
+    afw::table::Key<double> _apCovKey;
+    afw::table::Key<double> _nEffKey;
     afw::table::Centroid::MeasKey _centroidKey;
     afw::table::Shape::MeasKey _shapeKey;
     afw::table::Key<afw::table::Flag> _shapeFlagKey;
@@ -95,10 +109,12 @@ void GaussianFlux::_measurement(
     afw::table::SourceRecord& source,
     afw::image::Exposure<PixelT> const& exposure,
     afw::geom::Point2D const& center,
-    std::pair<double, double> const& measurement
+    boost::tuple<double, double, double, double> const& measurement
 ) const {
-    source.set(getKeys().meas, measurement.first);
-    source.set(getKeys().err, measurement.second);
+    source.set(getKeys().meas, measurement.get<0>());
+    source.set(getKeys().err, measurement.get<1>());
+    source.set(_apCovKey, measurement.get<2>());
+    source.set(_nEffKey, measurement.get<3>());
     source.set(getKeys().flag, false);
 }
 
@@ -117,7 +133,7 @@ void GaussianFlux::_apply(
 
     GaussianFluxControl const & ctrl = static_cast<GaussianFluxControl const &>(getControl());
 
-    std::pair<double, double> result;
+    boost::tuple<double, double, double, double> result;
     if (source.get(_shapeFlagKey)) {
         throw LSST_EXCEPT(pexExceptions::RuntimeErrorException, "Shape measurement failed");
     }
@@ -143,7 +159,7 @@ void GaussianFlux::_applyForced(
     afw::geom::ellipses::Quadrupole const& refShape =
         reference.get(reference.getSchema().find<afw::table::Shape::MeasTag>(ctrl.shape).key);
     detail::SdssShapeImpl sdss(center, refShape);
-    std::pair<double, double> const& result =
+    boost::tuple<double, double, double, double> const& result =
         detail::getFixedMomentsFlux(exposure.getMaskedImage(), ctrl.background,
                                     center.getX() - x0, center.getY() - y0, sdss);
     _measurement(source, exposure, center, result);
