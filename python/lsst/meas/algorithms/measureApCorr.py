@@ -35,7 +35,7 @@ __all__ = ("MeasureApCorrConfig", "MeasureApCorrTask")
 
 class KeyTuple(object):
 
-    __slots__ = ("flux", "err", "flag", "used",)
+    __slots__ = ("flux", "err", "flag", "used", "apCov")
 
     def __init__(self, name, schema):
         self.flux = schema.find(name).key
@@ -43,6 +43,13 @@ class KeyTuple(object):
         self.flag = schema.find(name + ".flags").key
         self.used = schema.addField("apcorr." + name + ".used", type="Flag",
                                     doc="set if source was used in measuring aperture correction")
+        # Look for an optional field that tells us the covariance between this measurement and a large
+        # aperture.  If it's not present, we assume the covariance is just the variance of the measurement
+        # (since that's what's true for aperture fluxes).
+        try:
+            self.apCov = schema.find(name + ".apCov").key
+        except KeyError:
+            self.apCov = None
 
 class MeasureApCorrConfig(lsst.pex.config.Config):
     reference = lsst.pex.config.Field(
@@ -130,15 +137,22 @@ class MeasureApCorrTask(lsst.pipe.base.Task):
             apCorrData = numpy.zeros(len(subset2), dtype=float)
             indices = numpy.arange(len(subset2), dtype=int)
             referenceFluxErr = numpy.zeros(len(subset2), dtype=float)
+            referenceFlux = numpy.zeros(len(subset2), dtype=float)
             measuredFluxErr = numpy.zeros(len(subset2), dtype=float)
             measuredFlux = numpy.zeros(len(subset2), dtype=float)
+            referenceMeasuredFluxCov = numpy.zeros(len(subset2), dtype=float)
             for n, record in enumerate(subset2):
                 x[n] = record.getX()
                 y[n] = record.getY()
                 apCorrData[n] = record.get(self.reference.flux)/record.get(keys.flux)
                 referenceFluxErr[n] = record.get(self.reference.err)
+                referenceFlux[n] = record.get(self.reference.flux)
                 measuredFluxErr[n] = record.get(keys.err)
                 measuredFlux[n] = record.get(keys.flux)
+                if keys.apCov is not None:
+                    referenceMeasuredFluxCov[n] = record.get(keys.apCov)
+                else:
+                    referenceMeasuredFluxCov[n] = measuredFluxErr[n]**2
 
             for _i in range(self.config.numIter):
 
@@ -160,8 +174,10 @@ class MeasureApCorrTask(lsst.pipe.base.Task):
                 apCorrData = apCorrData[keep]
                 indices = indices[keep]
                 referenceFluxErr = referenceFluxErr[keep]
+                referenceFlux = referenceFlux[keep]
                 measuredFluxErr = measuredFluxErr[keep]
                 measuredFlux = measuredFlux[keep]
+                referenceMeasuredFluxCov = referenceMeasuredFluxCov[keep]
 
             # Final fit after clipping
             apCorrField = lsst.afw.math.ChebyshevBoundedField.fit(bbox, x, y, apCorrData, ctrl)
@@ -169,7 +185,9 @@ class MeasureApCorrTask(lsst.pipe.base.Task):
             apCorrDiffs = apCorrField.evaluate(x, y)
             apCorrDiffs -= apCorrData
             # Variance due to measurement errors.
-            apCorrVar = (referenceFluxErr**2 - measuredFluxErr**2) / measuredFlux**2
+            apCorrVar = (apCorrData**2)*((referenceFluxErr/referenceFlux)**2 +
+                                         (measuredFluxErr/measuredFlux)**2 -
+                                         2.0*(referenceMeasuredFluxCov/(measuredFlux*referenceFlux))**2)
             if numpy.sum(apCorrDiffs**2-apCorrVar) > 0:
                 apCorrErr = numpy.sum((apCorrDiffs**2-apCorrVar)/(len(apCorrDiffs)-ctrl.computeSize()))**0.5
             else:
