@@ -154,6 +154,15 @@ struct ImageAdaptor {
     double getVariance(ImageT const&, int, int) {
         return std::numeric_limits<double>::quiet_NaN();
     }
+
+    static double getImage(typename ImageT::const_x_iterator & iter) {
+        return *iter;
+    }
+
+    static double getVariance(typename ImageT::const_x_iterator & iter) {
+        return 0.0;
+    }
+
 };
     
 template<typename T>                    // specialise to a MaskedImage
@@ -167,6 +176,16 @@ struct ImageAdaptor<afwImage::MaskedImage<T> > {
     double getVariance(afwImage::MaskedImage<T> const& mimage, int ix, int iy) {
         return mimage.at(ix, iy).variance();
     }
+
+    // Something in afw::image or Boost.GIL forbids these iterators from being passed as const references.
+    static double getImage(typename afwImage::MaskedImage<T>::const_x_iterator & iter) {
+        return iter.image();
+    }
+
+    static double getVariance(typename afwImage::MaskedImage<T>::const_x_iterator & iter) {
+        return iter.variance();
+    }
+
 };
 
 /// Calculate weights from moments

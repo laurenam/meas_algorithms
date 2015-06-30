@@ -43,11 +43,9 @@ public:
             "linear fit to an elliptical Gaussian with shape parameters set by adaptive moments"
         )
     {
-        if (ctrl.fixed) {
-            _centroidKey = schema[ctrl.centroid];
-            _shapeKey = schema[ctrl.shape];
-            _shapeFlagKey = schema[ctrl.shape + ctrl.shapeFlag];
-        }
+        _centroidKey = schema[ctrl.centroid];
+        _shapeKey = schema[ctrl.shape];
+        _shapeFlagKey = schema[ctrl.shape + ctrl.shapeFlag];
     }
 
 private:
@@ -88,39 +86,6 @@ private:
 };
 
 /************************************************************************************************************/
-    
-template<typename ImageT>
-std::pair<double, double>
-getGaussianFlux(
-    ImageT const& mimage,           // the data to process
-    double background,               // background level
-    double xcen, double ycen,         // centre of object
-    double shiftmax,                  // max allowed centroid shift
-    int maxIter=detail::SDSS_SHAPE_MAX_ITER, ///< Maximum number of iterations
-    float tol1=detail::SDSS_SHAPE_TOL1, ///< Convergence tolerance for e1,e2
-    float tol2=detail::SDSS_SHAPE_TOL2, ///< Convergence tolerance for FWHM
-    PTR(detail::SdssShapeImpl) shape=PTR(detail::SdssShapeImpl)() // SDSS shape measurement
-) {
-    double flux = std::numeric_limits<double>::quiet_NaN();
-    double fluxErr = std::numeric_limits<double>::quiet_NaN();
-
-    if (!shape) {
-        shape = boost::make_shared<detail::SdssShapeImpl>();
-    }
-
-    if (!detail::getAdaptiveMoments(mimage, background, xcen, ycen, shiftmax, shape.get(),
-                                    maxIter, tol1, tol2)) {
-        ;                               // Should set a flag here
-    } else {
-        double const scale = shape->getFluxScale();
-        flux = scale*shape->getI0();
-        fluxErr = scale*shape->getI0Err();
-    }
-
-    return std::make_pair(flux, fluxErr);
-}
-
-/************************************************************************************************************/
 /**
  * Calculate the desired gaussian flux
  */
@@ -153,22 +118,11 @@ void GaussianFlux::_apply(
     GaussianFluxControl const & ctrl = static_cast<GaussianFluxControl const &>(getControl());
 
     std::pair<double, double> result;
-    if (ctrl.fixed) {
-        // Fixed aperture, defined by SDSS shape measurement made elsewhere
-        if (source.get(_shapeFlagKey)) {
-            throw LSST_EXCEPT(pexExceptions::RuntimeErrorException, "Shape measurement failed");
-        }
-        detail::SdssShapeImpl sdss(source.get(_centroidKey), source.get(_shapeKey));
-        result = detail::getFixedMomentsFlux(mimage, ctrl.background, xcen, ycen, sdss);
-    } else {
-        // FIXME: propagate SDSS shape measurement flags.
-        /*
-         * Find the object's adaptive-moments.  N.b. it would be better to use the SdssShape measurement
-         * as this code repeats the work of that measurement
-         */
-        result = getGaussianFlux(mimage, ctrl.background, xcen, ycen, ctrl.shiftmax, ctrl.maxIter,
-                                 ctrl.tol1, ctrl.tol2);
+    if (source.get(_shapeFlagKey)) {
+        throw LSST_EXCEPT(pexExceptions::RuntimeErrorException, "Shape measurement failed");
     }
+    detail::SdssShapeImpl sdss(source.get(_centroidKey), source.get(_shapeKey));
+    result = detail::getFixedMomentsFlux(mimage, ctrl.background, xcen, ycen, sdss);
 
     _measurement(source, exposure, center, result);
 }

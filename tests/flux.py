@@ -75,12 +75,6 @@ class FluxTestCase(lsst.utils.tests.TestCase):
 
     def testGaussian(self):
         """Test that we can measure a Gaussian flux"""
-
-        self.config.algorithms["flux.gaussian"].fixed = False
-        source = self.measure()
-        self.assertClose(self.flux, source.get("flux.gaussian"), rtol=1E-4)
-
-        self.config.algorithms["flux.gaussian"].fixed = True
         source = self.measure()
         self.assertClose(self.flux, source.get("flux.gaussian"), rtol=1E-4)
         self.assertTrue(numpy.isfinite(source.get("flux.gaussian.err")))

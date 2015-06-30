@@ -42,8 +42,6 @@ namespace algorithms {
 class GaussianFluxControl : public FluxControl {
 public:
 
-    LSST_CONTROL_FIELD(fixed, bool,
-                       "if true, use existing shape and centroid measurements instead of fitting");
     LSST_CONTROL_FIELD(background, double, "FIXME! NEVER DOCUMENTED!");
     LSST_CONTROL_FIELD(shiftmax, double, "FIXME! NEVER DOCUMENTED!");
     LSST_CONTROL_FIELD(centroid, std::string, "name of centroid field to use if fixed is true");
@@ -54,7 +52,7 @@ public:
     LSST_CONTROL_FIELD(tol2, float, "Convergence tolerance for FWHM");
 
     GaussianFluxControl() :
-        FluxControl("flux.gaussian"), fixed(false), background(0.0), shiftmax(10.0),
+        FluxControl("flux.gaussian"), background(0.0), shiftmax(10.0),
         centroid("shape.sdss.centroid"), shape("shape.sdss"), shapeFlag(".flags"),
         maxIter(detail::SDSS_SHAPE_MAX_ITER),
         tol1(detail::SDSS_SHAPE_TOL1), tol2(detail::SDSS_SHAPE_TOL2)
