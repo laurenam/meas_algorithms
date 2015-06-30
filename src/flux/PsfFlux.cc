@@ -2,6 +2,9 @@
 #include <numeric>
 #include <cmath>
 #include <functional>
+
+#include "boost/tuple/tuple.hpp"
+
 #include "lsst/pex/exceptions.h"
 #include "lsst/pex/logging/Trace.h"
 #include "lsst/afw/geom/Point.h"
@@ -34,7 +37,19 @@ class PsfFlux : public FluxAlgorithm {
 public:
 
     PsfFlux(PsfFluxControl const & ctrl, afw::table::Schema & schema) :
-        FluxAlgorithm(ctrl, schema, "flux measured by a fit to the PSF model")
+        FluxAlgorithm(ctrl, schema, "flux measured by a fit to the PSF model"),
+        _apCovKey(
+            schema.addField<double>(
+                ctrl.name + ".apCov",
+                "uncertainty covariance between this measurement and a large aperture flux"
+            )
+        ),
+        _nEffKey(
+            schema.addField<double>(
+                ctrl.name + ".effectiveArea",
+                "effective area of the PSF at the position of this source."
+            )
+        )
     {}
 
 private:
@@ -47,6 +62,9 @@ private:
     ) const;
 
     LSST_MEAS_ALGORITHM_PRIVATE_INTERFACE(PsfFlux);
+
+    afw::table::Key<double> _apCovKey;
+    afw::table::Key<double> _nEffKey;
 };
 
 /**
@@ -74,7 +92,7 @@ public:
                         PTR(WeightImageT const) wimage    ///< The weight image
                        ) : afwDetection::FootprintFunctor<TargetImageT>(mimage),
                            _wimage(wimage),
-                           _sum(0), _sumVar(0), _x0(0), _y0(0) {}
+                           _sum(0), _sumVar(0), _apCov(0), _x0(0), _y0(0) {}
     
     /// @brief Reset everything for a new Footprint
     void reset() {}        
@@ -108,6 +126,9 @@ public:
     /// Return the variance of the Footprint's flux
     double getSumVar() const { return _sumVar; }
 
+    /// Return the covariance of the Footprint's flux with that of a large aperture
+    double getApCov() const { return _apCov; }
+
 private:
 
     template <typename LocatorT>
@@ -116,7 +137,8 @@ private:
         double vval = iloc.variance(0, 0);
         double wval = (*_wimage)(x - _x0, y - _y0);
         _sum += wval*ival;
-        _sumVar += wval*wval*vval;        
+        _sumVar += wval*wval*vval;
+        _apCov += wval*vval;
     }
 
     template <typename LocatorT>
@@ -129,11 +151,12 @@ private:
     PTR(WeightImageT const) _wimage;        // The weight image
     double _sum;                                      // our desired sum
     double _sumVar;
+    double _apCov;
     int _x0, _y0;                                     // the origin of the current Footprint
 };
 
 template <typename TargetImageT>
-std::pair<double,double> computePsfFlux(
+boost::tuple<double,double,double,double> computePsfFlux(
     TargetImageT const image,
     PTR(afw::detection::Psf::Image) const & wimage,
     afw::geom::Point2D const & center
@@ -149,7 +172,9 @@ std::pair<double,double> computePsfFlux(
     
     double flux = wfluxFunctor.getSum()*sum.sum/sum.sum2;
     double fluxErr = ::sqrt(wfluxFunctor.getSumVar())*::fabs(sum.sum)/sum.sum2;
-    return std::make_pair(flux, fluxErr);
+    double apCov = wfluxFunctor.getApCov()*sum.sum/sum.sum2;
+    double nEff = sum.sum*sum.sum/sum.sum2;
+    return boost::make_tuple(flux, fluxErr, apCov, nEff);
 }
 
 /************************************************************************************************************/
@@ -178,11 +203,12 @@ void PsfFlux::_apply(
         throw e;
     }
 
-    std::pair<double,double> result = computePsfFlux(exposure.getMaskedImage(), psfImage, center);
-    source.set(getKeys().meas, result.first);
-    source.set(getKeys().err, result.second);
+    boost::tuple<double,double,double,double> result = computePsfFlux(exposure.getMaskedImage(), psfImage, center);
+    source.set(getKeys().meas, result.get<0>());
+    source.set(getKeys().err, result.get<1>());
+    source.set(_apCovKey, result.get<2>());
+    source.set(_nEffKey, result.get<3>());
     source.set(getKeys().flag, false);
-
 }
 
 LSST_MEAS_ALGORITHM_PRIVATE_IMPLEMENTATION(PsfFlux);
