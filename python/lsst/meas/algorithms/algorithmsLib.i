@@ -136,6 +136,7 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %shared_ptr(lsst::meas::algorithms::SkyCoordControl)
 %shared_ptr(lsst::meas::algorithms::JacobianControl)
 %shared_ptr(lsst::meas::algorithms::FocalPlaneControl)
+%shared_ptr(lsst::meas::algorithms::CountInputsControl)
 
 %include "std_set.i"
 %template(ApCorrRegistry) std::set<std::string>;
@@ -153,6 +154,7 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %include "lsst/meas/algorithms/GaussianFluxControl.h"
 %include "lsst/meas/algorithms/CorrectFluxes.h"
 %include "lsst/meas/algorithms/Photometry.h"
+%include "lsst/meas/algorithms/CountInputs.h"
 %returnCopy(lsst::meas::algorithms::MeasureSources::getAlgorithms)
 %returnSelf(lsst::meas::algorithms::MeasureSourcesBuilder::setCentroider)
 %returnSelf(lsst::meas::algorithms::MeasureSourcesBuilder::addAlgorithm)
