@@ -190,6 +190,7 @@ AlgorithmRegistry.register("flux.naive", algorithmsLib.NaiveFluxControl)
 AlgorithmRegistry.register("flux.psf", algorithmsLib.PsfFluxControl)
 AlgorithmRegistry.register("jacobian", algorithmsLib.JacobianControl)
 AlgorithmRegistry.register("focalplane", algorithmsLib.FocalPlaneControl)
+AlgorithmRegistry.register("countInputs", algorithmsLib.CountInputsControl)
 
 # Here's an example on how to declare a measurement config more manually, and add a property to the Config.
 @pexConf.wrap(algorithmsLib.SincFluxControl)
