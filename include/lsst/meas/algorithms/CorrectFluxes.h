@@ -53,6 +53,11 @@ public:
     );
 
     LSST_CONTROL_FIELD(
+        doPropagateErrors, bool,
+        "Whether to propagate aperture correction uncertainties into flux uncertainties"
+    );
+
+    LSST_CONTROL_FIELD(
         ignored, std::vector<std::string>,
         ("List of flux fields that should not be corrected (otherwise all fields in "
          "getApCorrRegistry() will be)")
@@ -62,6 +67,7 @@ public:
         AlgorithmControl("correctfluxes", 3.0),
         doFlagApCorrFailures(true),
         doRecordApCorr(true),
+        doPropagateErrors(false),
         ignored()
     {}
 

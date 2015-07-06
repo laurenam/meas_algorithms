@@ -170,23 +170,36 @@ void CorrectFluxes::_apply(
         double apCorrErr = 0.0;
         try {
             apCorr = i->apCorrField->evaluate(center);
-            apCorrErr = i->apCorrErrField->evaluate(center);
+            if (ctrl.doRecordApCorr) {
+                source.set(i->apCorrKeys.meas, apCorr);
+            }
         } catch (pex::exceptions::Exception &) {
             continue;
         }
-        if (ctrl.doRecordApCorr) {
-            source.set(i->apCorrKeys.meas, apCorr);
-            source.set(i->apCorrKeys.err, apCorrErr);
+        try {
+            // We attempt to record the aperture correction error, even if we don't propagate it into the
+            // flux errors - but if we didn't measure the aperture correction error, it's only a fatal error
+            // if we are trying to propagate it.
+            apCorrErr = i->apCorrErrField->evaluate(center);
+            if (ctrl.doRecordApCorr) {
+                source.set(i->apCorrKeys.err, apCorrErr);
+            }
+        } catch (pex::exceptions::Exception &) {
+            if (ctrl.doPropagateErrors) continue;
         }
-        if (apCorr <= 0.0 || apCorrErr < 0.0) {
+        if (apCorr <= 0.0 || (ctrl.doPropagateErrors && apCorrErr < 0.0)) {
             continue;
         }
         double const flux = source.get(i->fluxKeys.meas);
-        double const fluxErr = source.get(i->fluxKeys.err);
         source.set(i->fluxKeys.meas, flux*apCorr);
-        double const a = fluxErr/flux;
-        double const b = apCorrErr/apCorr;
-        source.set(i->fluxKeys.err, std::abs(flux*apCorr)*std::sqrt(a*a + b*b));
+        double const fluxErr = source.get(i->fluxKeys.err);
+        if (ctrl.doPropagateErrors) {
+            double const a = fluxErr/flux;
+            double const b = apCorrErr/apCorr;
+            source.set(i->fluxKeys.err, std::abs(flux*apCorr)*std::sqrt(a*a + b*b));
+        } else {
+            source.set(i->fluxKeys.err, apCorr*fluxErr);
+        }
         source.set(i->apCorrKeys.flag, false);
         if (ctrl.doFlagApCorrFailures) {
             source.set(i->fluxKeys.flag, oldFluxFlagState);
