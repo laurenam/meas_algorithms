@@ -188,6 +188,7 @@ AlgorithmRegistry.register("flux.peakLikelihood", algorithmsLib.PeakLikelihoodFl
 AlgorithmRegistry.register("flux.gaussian", algorithmsLib.GaussianFluxControl)
 AlgorithmRegistry.register("flux.naive", algorithmsLib.NaiveFluxControl)
 AlgorithmRegistry.register("flux.psf", algorithmsLib.PsfFluxControl)
+AlgorithmRegistry.register("flux.scaled", algorithmsLib.ScaledApertureFluxControl)
 AlgorithmRegistry.register("jacobian", algorithmsLib.JacobianControl)
 AlgorithmRegistry.register("focalplane", algorithmsLib.FocalPlaneControl)
 AlgorithmRegistry.register("countInputs", algorithmsLib.CountInputsControl)
