@@ -244,6 +244,25 @@ private:
     ) const;
 };
 
+/**
+ *  @brief C++ control object for scaled aperture flux.
+ *
+ *  @sa ScaledApertureFluxConfig.
+ */
+class ScaledApertureFluxControl : public FluxControl {
+public:
+
+    LSST_CONTROL_FIELD(scale, double, "scaling factor of PSF FWHM for aperture radius");
+
+    ScaledApertureFluxControl() : FluxControl("flux.scaled"), scale(3.14) {}
+
+private:
+    virtual PTR(AlgorithmControl) _clone() const;
+    virtual PTR(Algorithm) _makeAlgorithm(
+        afw::table::Schema & schema, PTR(daf::base::PropertyList) const & metadata
+    ) const;
+};
+
 }}}// namespace lsst::meas::algorithms
 
 #endif // !LSST_MEAS_ALGORITHMS_FLUXCONTROL_H

@@ -129,6 +129,7 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %shared_ptr(lsst::meas::algorithms::NaiveFluxControl)
 %shared_ptr(lsst::meas::algorithms::PsfFluxControl)
 %shared_ptr(lsst::meas::algorithms::SincFluxControl)
+%shared_ptr(lsst::meas::algorithms::ScaledApertureFluxControl)
 
 %shared_ptr(lsst::meas::algorithms::CorrectFluxesControl)
 %shared_ptr(lsst::meas::algorithms::ClassificationControl)
