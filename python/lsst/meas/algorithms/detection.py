@@ -33,6 +33,7 @@ import lsst.afw.detection as afwDet
 import lsst.pipe.base as pipeBase
 
 from . import algorithmsLib
+from .cullPeaks import cullPeaks
 
 __all__ = ("SourceDetectionConfig", "SourceDetectionTask", "getBackground",
            "estimateBackground", "BackgroundConfig", "addExposures")
@@ -162,6 +163,14 @@ class SourceDetectionConfig(pexConfig.Config):
         dtype=BackgroundConfig,
         doc="Background re-estimation configuration"
         )
+    doCullPeaks = pexConfig.Field(
+        doc="Cull peaks in detected footprints?",
+        dtype=bool, default=True,
+    )
+    cullSigma = pexConfig.Field(
+        doc="How many sigma above local background a peak needs to be to survive",
+        dtype=float, default=3.0,
+    )
 
 class SourceDetectionTask(pipeBase.Task):
     """
@@ -303,7 +312,7 @@ class SourceDetectionTask(pipeBase.Task):
 
         fpSets = pipeBase.Struct(positive=None, negative=None)
 
-        if self.config.thresholdPolarity != "negative":
+        if self.config.reEstimateBackground or self.config.thresholdPolarity != "negative":
             fpSets.positive = self.thresholdImage(middle, "positive")
         if self.config.reEstimateBackground or self.config.thresholdPolarity != "positive":
             fpSets.negative = self.thresholdImage(middle, "negative")
@@ -325,8 +334,15 @@ class SourceDetectionTask(pipeBase.Task):
         fpSets.numNeg = len(fpSets.negative.getFootprints()) if fpSets.negative is not None else 0
 
         if self.config.thresholdPolarity != "negative":
-            self.log.log(self.log.INFO, "Detected %d positive sources to %g sigma." %
-                         (fpSets.numPos, self.config.thresholdValue))
+            if self.config.doCullPeaks:
+                self.cullPeaks(fpSets.positive, maskedImage, "positive")
+            self.log.info("Detected %d positive sources to %g sigma." %
+                          (fpSets.numPos, self.config.thresholdValue))
+        if self.config.thresholdPolarity != "positive":
+            if self.config.doCullPeaks:
+                self.cullPeaks(fpSets.negative, maskedImage, "negative")
+            self.log.info("Detected %d negative sources to %g sigma." %
+                          (fpSets.numNeg, self.config.thresholdValue))
 
         fpSets.background = None
         if self.config.reEstimateBackground:
@@ -390,6 +406,34 @@ class SourceDetectionTask(pipeBase.Task):
 
         fpSet = afwDet.FootprintSet(image, threshold, maskName, self.config.minPixels)
         return fpSet
+
+    def cullPeaks(self, fpSet, maskedImage, polarity="positive"):
+        """Cull insignificant peaks
+
+        We can get insignificant peaks (particularly in the halos of bright
+        sources) due to noise fluctuations.  We investigate each footprint,
+        removing peaks that are not sufficiently significant.  The Footprints
+        are updated in-place.
+
+        @param fpSet  Set of footprints to investigate
+        @param maskedImage  MaskedImage that includes footprints
+        @param polarity  Which direction to apply the threshold ("positive" or "negative")
+        """
+        assert polarity in ("positive", "negative")
+        import lsstDebug
+        display = lsstDebug.Info(__name__).cull
+        if display:
+            ds9.mtv(maskedImage, frame=display)
+        numBefore = sum(len(fp.getPeaks()) for fp in fpSet.getFootprints())
+        with ds9.Buffering():
+            for foot in fpSet.getFootprints():
+                cullPeaks(foot, maskedImage, self.config.cullSigma, polarity == "positive", display=display)
+        numAfter = sum(len(fp.getPeaks()) for fp in fpSet.getFootprints())
+        self.log.info("Culled %d %s peaks (%d --> %d)" %
+                      (numBefore - numAfter, polarity, numBefore, numAfter))
+        if display:
+            print "Dropping into pdb to allow inspection of image; enter 'continue' when done"
+            import pdb;pdb.set_trace()
 
     @staticmethod
     def setEdgeBits(maskedImage, goodBBox, edgeBitmask):
