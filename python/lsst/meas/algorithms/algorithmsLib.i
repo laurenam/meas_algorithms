@@ -184,6 +184,11 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %}
 }
 
+%include "lsst/meas/algorithms/Blendedness.h"
+%pythoncode %{
+BlendednessConfig = lsst.pex.config.makeConfigClass(BlendednessControl)
+%}
+
 /************************************************************************************************************/
 
 %shared_ptr(lsst::meas::algorithms::Defect);
