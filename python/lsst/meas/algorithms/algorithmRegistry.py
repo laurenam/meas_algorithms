@@ -174,7 +174,7 @@ class AlgorithmRegistry(pexConf.Registry):
 AlgorithmRegistry.all = AlgorithmRegistry()
 
 AlgorithmRegistry.register("correctfluxes", target=algorithmsLib.CorrectFluxesControl)
-AlgorithmRegistry.register("classification.extendedness", algorithmsLib.ClassificationControl)
+AlgorithmRegistry.register("classification.extendedness", algorithmsLib.ExtendednessControl)
 AlgorithmRegistry.register("flags.pixel", algorithmsLib.PixelFlagControl)
 AlgorithmRegistry.register("skycoord", algorithmsLib.SkyCoordControl)
 AlgorithmRegistry.register("centroid.gaussian", algorithmsLib.GaussianCentroidControl)

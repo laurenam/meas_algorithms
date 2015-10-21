@@ -2,16 +2,16 @@
 
 #include "boost/make_shared.hpp"
 
-#include "lsst/meas/algorithms/Classification.h"
+#include "lsst/meas/algorithms/Extendedness.h"
 
 namespace lsst { namespace meas { namespace algorithms {
 
 namespace {
 
-class ClassificationAlgorithm : public Algorithm {
+class ExtendednessAlgorithm : public Algorithm {
 public:
 
-    ClassificationAlgorithm(ClassificationControl const & ctrl, afw::table::Schema & schema);
+    ExtendednessAlgorithm(ExtendednessControl const & ctrl, afw::table::Schema & schema);
 
 public:
 
@@ -23,42 +23,42 @@ public:
     ) const;
 
 private:
-    LSST_MEAS_ALGORITHM_PRIVATE_INTERFACE(ClassificationAlgorithm);
+    LSST_MEAS_ALGORITHM_PRIVATE_INTERFACE(ExtendednessAlgorithm);
 
     afw::table::Key<double> _key;
 };
 
-ClassificationAlgorithm::ClassificationAlgorithm(
-    ClassificationControl const & ctrl, afw::table::Schema & schema
+ExtendednessAlgorithm::ExtendednessAlgorithm(
+    ExtendednessControl const & ctrl, afw::table::Schema & schema
 ) :
     Algorithm(ctrl),
     _key(schema.addField<double>(ctrl.name, "probability of being extended"))
 {}
 
 template <typename PixelT>
-void ClassificationAlgorithm::_apply(
+void ExtendednessAlgorithm::_apply(
     afw::table::SourceRecord & source,
     afw::image::Exposure<PixelT> const & exposure,
     afw::geom::Point2D const & center
 ) const {
-    ClassificationControl const & ctrl = static_cast<ClassificationControl const &>(getControl());
+    ExtendednessControl const & ctrl = static_cast<ExtendednessControl const &>(getControl());
     source[_key] = (ctrl.fluxRatio*source.getModelFlux() + ctrl.modelErrFactor*source.getModelFluxErr())
         < (source.getPsfFlux() + ctrl.psfErrFactor*source.getPsfFluxErr()) ? 0.0 : 1.0;
 }
 
-LSST_MEAS_ALGORITHM_PRIVATE_IMPLEMENTATION(ClassificationAlgorithm);
+LSST_MEAS_ALGORITHM_PRIVATE_IMPLEMENTATION(ExtendednessAlgorithm);
 
 } // anonymous
 
-PTR(AlgorithmControl) ClassificationControl::_clone() const {
-    return boost::make_shared<ClassificationControl>(*this);
+PTR(AlgorithmControl) ExtendednessControl::_clone() const {
+    return boost::make_shared<ExtendednessControl>(*this);
 }
 
-PTR(Algorithm) ClassificationControl::_makeAlgorithm(
+PTR(Algorithm) ExtendednessControl::_makeAlgorithm(
     afw::table::Schema & schema,
     PTR(daf::base::PropertyList) const & metadata
 ) const {
-    return boost::make_shared<ClassificationAlgorithm>(*this, boost::ref(schema));
+    return boost::make_shared<ExtendednessAlgorithm>(*this, boost::ref(schema));
 }
 
 }}} // namespace lsst::meas::algorithms
