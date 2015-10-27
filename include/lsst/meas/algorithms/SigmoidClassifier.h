@@ -85,7 +85,9 @@ protected:
         PTR(afw::image::Calib const) calib
     ) const = 0;
 
-    Control const & getControl() const { return static_cast<Control const &>(getControl()); }
+    Control const & getControl() const {
+        return static_cast<Control const &>(Algorithm::getControl());
+    }
 
 private:
 

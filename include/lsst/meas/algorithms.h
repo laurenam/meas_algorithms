@@ -38,6 +38,8 @@
 #include "lsst/meas/algorithms/ShapeControl.h"
 #include "lsst/meas/algorithms/CorrectFluxes.h"
 #include "lsst/meas/algorithms/Extendedness.h"
+#include "lsst/meas/algorithms/SigmoidClassifier.h"
+#include "lsst/meas/algorithms/MomentsClassifier.h"
 #include "lsst/meas/algorithms/PixelFlags.h"
 #include "lsst/meas/algorithms/SkyCoord.h"
 #include "lsst/meas/algorithms/RecordCentroid.h"
