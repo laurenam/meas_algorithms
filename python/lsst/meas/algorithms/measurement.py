@@ -89,8 +89,8 @@ class SourceMeasurementConfig(pexConfig.Config):
                  ],
         doc="Algorithms that will be run by default."
         )
-    
-    centroider = AlgorithmRegistry.filter(CentroidConfig).makeField(
+
+    centroider = AlgorithmRegistry.filter(algorithmsLib.CentroidConfig).makeField(
         multi=False, default="centroid.sdss", optional=True,
         doc="Configuration for the initial centroid algorithm used to\n"\
             "feed center points to other algorithms.\n\n"\

@@ -142,11 +142,32 @@ namespace lsst { namespace meas { namespace algorithms { namespace interp {} nam
 %include "std_set.i"
 %template(ApCorrRegistry) std::set<std::string>;
 
-%include "lsst/meas/algorithms/classifiers.i"
-
 %include "lsst/meas/algorithms/FluxControl.h"
 %include "lsst/meas/algorithms/CentroidControl.h"
 %include "lsst/meas/algorithms/ShapeControl.h"
+
+%pythoncode %{
+import lsst.pex.config as pexConf
+
+@pexConf.wrap(AlgorithmControl)
+class AlgorithmConfig(pexConf.Config):
+    pass
+
+@pexConf.wrap(CentroidControl)
+class CentroidConfig(AlgorithmConfig):
+    pass
+
+@pexConf.wrap(ShapeControl)
+class ShapeConfig(AlgorithmConfig):
+    pass
+
+@pexConf.wrap(FluxControl)
+class FluxConfig(AlgorithmConfig):
+    pass
+%}
+
+%include "lsst/meas/algorithms/classifiers.i"
+
 %include "lsst/meas/algorithms/Jacobian.h"
 %include "lsst/meas/algorithms/FocalPlane.h"
 %include "lsst/meas/algorithms/PixelFlags.h"

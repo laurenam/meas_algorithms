@@ -3,21 +3,6 @@ import collections
 import lsst.pex.config as pexConf
 from . import algorithmsLib
 
-@pexConf.wrap(algorithmsLib.AlgorithmControl)
-class AlgorithmConfig(pexConf.Config):
-    pass
-
-@pexConf.wrap(algorithmsLib.CentroidControl)
-class CentroidConfig(AlgorithmConfig):
-    pass
-
-@pexConf.wrap(algorithmsLib.ShapeControl)
-class ShapeConfig(AlgorithmConfig):
-    pass
-
-@pexConf.wrap(algorithmsLib.FluxControl)
-class FluxConfig(AlgorithmConfig):
-    pass
 
 class AlgorithmRegistry(pexConf.Registry):
     """A customized registry for source measurement algorithms.
@@ -116,7 +101,7 @@ class AlgorithmRegistry(pexConf.Registry):
         if hasattr(cls, "all"):
             raise TypeError("AlgorithmRegistry should be a singleton, and must "\
                             "not be copied (this is probably a bug in pex_config).")
-        return pexConf.Registry.__new__(cls, AlgorithmConfig)
+        return pexConf.Registry.__new__(cls, algorithmsLib.AlgorithmConfig)
 
     @classmethod
     def register(cls, name, target, ConfigClass=None):
@@ -196,7 +181,7 @@ AlgorithmRegistry.register("variance", algorithmsLib.VarianceControl)
 
 # Here's an example on how to declare a measurement config more manually, and add a property to the Config.
 @pexConf.wrap(algorithmsLib.SincFluxControl)
-class SincFluxConfig(FluxConfig):
+class SincFluxConfig(algorithmsLib.FluxConfig):
     def _get_radius(self): return self.radius2
     def _set_radius(self, r): self.radius2 = r
     radius = property(_get_radius, _set_radius, doc="synonym for radius2")
