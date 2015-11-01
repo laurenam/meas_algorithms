@@ -290,12 +290,12 @@ class SourceMeasurementTask(pipeBase.Task):
                         self.measurer.applyForced(source, exposure, ref, refWcs, True,
                                                   beginPriority, endPriority)
                     if self.config.doBlendedness:
-                        self.blendedness.measureChildPixels(exposure.getMaskedImage().getImage(), source)
+                        self.blendedness.measureChildPixels(exposure.getMaskedImage(), source)
         # Now we loop over all of the sources one more time to compute the blendedness metrics
         # on the original image (i.e. with no noise replacement).
         for source, ref in zip(sources, references):
             if self.config.doBlendedness:
-                self.blendedness.measureParentPixels(exposure.getMaskedImage().getImage(), source)
+                self.blendedness.measureParentPixels(exposure.getMaskedImage(), source)
 
 
     # Alias for backwards compatibility

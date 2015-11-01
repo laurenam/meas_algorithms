@@ -53,17 +53,11 @@ struct BlendednessControl {
         "Radius factor that sets the maximum extent of the weight function (and hence the flux measurements)"
     );
 
-    LSST_CONTROL_FIELD(
-        useAbsoluteValue, bool,
-        "If true, take the absolute value of the pixels when computing flux and shape blendedness."
-    );
-
     BlendednessControl() :
         doOld(true),
         doFlux(true),
         doShape(true),
-        nSigmaWeightMax(3.0),
-        useAbsoluteValue(true)
+        nSigmaWeightMax(3.0)
     {}
 
 };
@@ -82,31 +76,38 @@ public:
     explicit Blendedness(BlendednessControl const & ctrl, afw::table::Schema & schema);
 
     void measureChildPixels(
-        afw::image::Image<float> const & image,
+        afw::image::MaskedImage<float> const & image,
         afw::table::SourceRecord & child
     ) const;
 
     void measureParentPixels(
-        afw::image::Image<float> const & image,
+        afw::image::MaskedImage<float> const & image,
         afw::table::SourceRecord & child
     ) const;
 
 private:
 
     void _measureMoments(
-        afw::image::Image<float> const & image,
+        afw::image::MaskedImage<float> const & image,
         afw::table::SourceRecord & child,
-        afw::table::Key<double> const & fluxKey,
-        afw::table::Key< afw::table::Moments<double> > const & _shapeKey
+        afw::table::Key<double> const & fluxRawKey,
+        afw::table::Key<double> const & fluxAbsKey,
+        afw::table::Key< afw::table::Moments<double> > const & _shapeRawKey,
+        afw::table::Key< afw::table::Moments<double> > const & _shapeAbsKey
     ) const;
 
     BlendednessControl const _ctrl;
     afw::table::Key<double> _old;
-    afw::table::Key<double> _flux;
-    afw::table::Key<double> _fluxChild;
-    afw::table::Key<double> _fluxParent;
-    afw::table::Key< afw::table::Moments<double> > _shapeChild;
-    afw::table::Key< afw::table::Moments<double> > _shapeParent;
+    afw::table::Key<double> _fluxRaw;
+    afw::table::Key<double> _fluxChildRaw;
+    afw::table::Key<double> _fluxParentRaw;
+    afw::table::Key<double> _fluxAbs;
+    afw::table::Key<double> _fluxChildAbs;
+    afw::table::Key<double> _fluxParentAbs;
+    afw::table::Key< afw::table::Moments<double> > _shapeChildRaw;
+    afw::table::Key< afw::table::Moments<double> > _shapeParentRaw;
+    afw::table::Key< afw::table::Moments<double> > _shapeChildAbs;
+    afw::table::Key< afw::table::Moments<double> > _shapeParentAbs;
     afw::table::Key<afw::table::Flag> _flagGeneral;
     afw::table::Key<afw::table::Flag> _flagNoCentroid;
     afw::table::Key<afw::table::Flag> _flagNoShape;

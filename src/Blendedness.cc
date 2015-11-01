@@ -21,6 +21,9 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
 
+#include "boost/math/special_functions/erf.hpp"
+#include <boost/math/constants/constants.hpp>
+
 #include "lsst/utils/ieee.h"
 #include "lsst/meas/algorithms/Blendedness.h"
 #include "lsst/afw/detection/HeavyFootprint.h"
@@ -133,18 +136,17 @@ private:
     double _wdxx;
     double _wdyy;
     double _wdxy;
-
 };
 
 
 template <typename Accumulator>
 void computeMoments(
-    afw::image::Image<float> const & image,
+    afw::image::MaskedImage<float> const & image,
     afw::geom::Point2D const & centroid,
     afw::geom::ellipses::Quadrupole const & shape,
     double nSigmaWeightMax,
-    bool useAbsoluteValue,
-    Accumulator & accumulator
+    Accumulator & accumulatorRaw,
+    Accumulator & accumulatorAbs
 ) {
     afw::geom::Box2I bbox = image.getBBox(lsst::afw::image::PARENT);
 
@@ -153,12 +155,12 @@ void computeMoments(
 
     // To evaluate an elliptically-symmetric function, we transform points
     // by the following transform, then evaluate a circularly-symmetric function
-    // at afw::geom::the transformed positions.
+    // at the transformed positions.
     afw::geom::LinearTransform transform = shape.getGridTransform();
 
     typedef afw::geom::ellipses::PixelRegion::Iterator SpanIter;    // yields Spans
     typedef afw::geom::Span::Iterator PointIter;                    // yields Point2I positions
-    typedef afw::image::Image<float>::const_x_iterator PixelIter;   // yields pixel values
+    typedef afw::image::MaskedImage<float>::const_x_iterator PixelIter;   // yields pixel values
 
     afw::geom::ellipses::PixelRegion region(ellipse);
     bool isContained = bbox.contains(region.getBBox());
@@ -186,9 +188,16 @@ void computeMoments(
         for (PointIter pointIter = span.begin(); pointIter != pointEnd; ++pointIter, ++pixelIter) {
             afw::geom::Extent2D d = afw::geom::Point2D(*pointIter) - centroid;
             afw::geom::Extent2D td = transform(d);
-            float y = useAbsoluteValue ? std::abs(*pixelIter) : (*pixelIter);
-            float z = 0.5*td.computeSquaredNorm();  // use single precision for faster exp
-            accumulator(d.getX(), d.getY(), std::exp(-z), y);
+            // use single precision for faster exp, erf
+            float weight = std::exp(static_cast<float>(-0.5*td.computeSquaredNorm()));
+            float data = pixelIter.image();
+            accumulatorRaw(d.getX(), d.getY(), weight, data);
+            float variance = pixelIter.variance();
+            float mu = std::max(0.0f, data);
+            float bias = (std::sqrt(2.0f*variance/boost::math::constants::pi<float>())*
+                          std::exp(-0.5f*(mu*mu)/variance)) -
+                mu*boost::math::erfc(mu/std::sqrt(2.0f*variance));
+            accumulatorAbs(d.getX(), d.getY(), weight, std::max(std::abs(data) - bias, 0.0f));
         }
     }
 }
@@ -207,30 +216,59 @@ Blendedness::Blendedness(BlendednessControl const & ctrl, afw::table::Schema & s
         );
     }
     if (_ctrl.doFlux) {
-        _flux = schema.addField<double>(
-            "blendedness.flux",
+        _fluxRaw = schema.addField<double>(
+            "blendedness.raw.flux",
             "measure of how flux is affected by neighbors: (1 - flux.child/flux.parent)"
         );
-        _fluxChild = schema.addField<double>(
-            "blendedness.flux.child",
+        _fluxChildRaw = schema.addField<double>(
+            "blendedness.raw.flux.child",
             "flux of the child, measured with a Gaussian weight matched to the child",
             "dn"
         );
-        _fluxParent = schema.addField<double>(
-            "blendedness.flux.parent",
+        _fluxParentRaw = schema.addField<double>(
+            "blendedness.raw.flux.parent",
             "flux of the parent, measured with a Gaussian weight matched to the child",
+            "dn"
+        );
+        _fluxAbs = schema.addField<double>(
+            "blendedness.abs.flux",
+            "measure of how flux is affected by neighbors: (1 - flux.child/flux.parent)"
+            " (uses absolute values of pixels)"
+        );
+        _fluxChildAbs = schema.addField<double>(
+            "blendedness.abs.flux.child",
+            "flux of the child, measured with a Gaussian weight matched to the child"
+            " (uses absolute values of pixels)",
+            "dn"
+        );
+        _fluxParentAbs = schema.addField<double>(
+            "blendedness.abs.flux.parent",
+            "flux of the parent, measured with a Gaussian weight matched to the child"
+            " (uses absolute values of pixels)",
             "dn"
         );
     }
     if (_ctrl.doShape) {
-        _shapeChild = schema.addField< afw::table::Moments<double> >(
-            "blendedness.shape.child",
+        _shapeChildRaw = schema.addField< afw::table::Moments<double> >(
+            "blendedness.raw.shape.child",
             "shape of the child, measured with a Gaussian weight matched to the child",
             "dn"
         );
-        _shapeParent = schema.addField< afw::table::Moments<double> >(
-            "blendedness.shape.parent",
+        _shapeParentRaw = schema.addField< afw::table::Moments<double> >(
+            "blendedness.raw.shape.parent",
             "shape of the parent, measured with a Gaussian weight matched to the child",
+            "dn"
+        );
+        _shapeChildAbs = schema.addField< afw::table::Moments<double> >(
+            "blendedness.abs.shape.child",
+            "shape of the child, measured with a Gaussian weight matched to the child"
+            " (uses absolute values of pixels)",
+            "dn"
+        );
+        _shapeParentAbs = schema.addField< afw::table::Moments<double> >(
+            "blendedness.abs.shape.parent",
+            "shape of the parent, measured with a Gaussian weight matched to the child"
+            " (uses absolute values of pixels)",
             "dn"
         );
     }
@@ -252,10 +290,12 @@ Blendedness::Blendedness(BlendednessControl const & ctrl, afw::table::Schema & s
 
 
 void Blendedness::_measureMoments(
-    afw::image::Image<float> const & image,
+    afw::image::MaskedImage<float> const & image,
     afw::table::SourceRecord & child,
-    afw::table::Key<double> const & fluxKey,
-    afw::table::Key< afw::table::Moments<double> > const & shapeKey
+    afw::table::Key<double> const & fluxRawKey,
+    afw::table::Key<double> const & fluxAbsKey,
+    afw::table::Key< afw::table::Moments<double> > const & shapeRawKey,
+    afw::table::Key< afw::table::Moments<double> > const & shapeAbsKey
 ) const {
     // TODO: check flags on centroid and shape, set flags on blendedness
     if (_ctrl.doShape || _ctrl.doFlux) {
@@ -277,61 +317,73 @@ void Blendedness::_measureMoments(
             fatal = true;
         }
         if (!(utils::isfinite(child.getX()) && utils::isfinite(child.getY()))) {
-            // shape flag should have been set already, but we're paranoid
-            child.set(_flagNoShape, true);
+            // centroid flag should have been set already, but we're paranoid
+            child.set(_flagNoCentroid, true);
             child.set(_flagGeneral, true);
             fatal = true;
         }
         if (fatal) return;
     }
     if (_ctrl.doShape) {
-        ShapeAccumulator accumulator;
+        ShapeAccumulator accumulatorRaw;
+        ShapeAccumulator accumulatorAbs;
         computeMoments(
             image,
             child.getCentroid(),
             child.getShape(),
             _ctrl.nSigmaWeightMax,
-            _ctrl.useAbsoluteValue,
-            accumulator
+            accumulatorRaw,
+            accumulatorAbs
         );
         if (_ctrl.doFlux) {
-            child.set(fluxKey, accumulator.getFlux());
+            child.set(fluxRawKey, accumulatorRaw.getFlux());
+            child.set(fluxAbsKey, accumulatorAbs.getFlux());
         }
-        child.set(shapeKey, accumulator.getShape());
+        child.set(shapeRawKey, accumulatorRaw.getShape());
+        child.set(shapeAbsKey, accumulatorAbs.getShape());
     } else if (_ctrl.doFlux) {
-        FluxAccumulator accumulator;
+        FluxAccumulator accumulatorRaw;
+        FluxAccumulator accumulatorAbs;
         computeMoments(
             image,
             child.getCentroid(),
             child.getShape(),
             _ctrl.nSigmaWeightMax,
-            _ctrl.useAbsoluteValue,
-            accumulator
+            accumulatorRaw,
+            accumulatorAbs
         );
-        child.set(fluxKey, accumulator.getFlux());
+        child.set(fluxRawKey, accumulatorRaw.getFlux());
+        child.set(fluxAbsKey, accumulatorAbs.getFlux());
     }
 }
 
 
 
 void Blendedness::measureChildPixels(
-    afw::image::Image<float> const & image,
+    afw::image::MaskedImage<float> const & image,
     afw::table::SourceRecord & child
 ) const {
-    _measureMoments(image, child, _fluxChild, _shapeChild);
+    _measureMoments(image, child, _fluxChildRaw, _fluxChildAbs, _shapeChildRaw, _shapeChildAbs);
 }
 
 
 void Blendedness::measureParentPixels(
-    afw::image::Image<float> const & image,
+    afw::image::MaskedImage<float> const & image,
     afw::table::SourceRecord & child
 ) const {
     if (_ctrl.doOld) {
-        child.set(_old, computeOldBlendedness(child.getFootprint(), image));
+        child.set(_old, computeOldBlendedness(child.getFootprint(), *image.getImage()));
     }
-    _measureMoments(image, child, _fluxParent, _shapeParent);
+    _measureMoments(image, child, _fluxParentRaw, _fluxParentAbs, _shapeParentRaw,_shapeParentAbs);
     if (_ctrl.doFlux) {
-        child.set(_flux, 1.0 - child.get(_fluxChild)/child.get(_fluxParent));
+        child.set(_fluxRaw, 1.0 - child.get(_fluxChildRaw)/child.get(_fluxParentRaw));
+        child.set(_fluxAbs, 1.0 - child.get(_fluxChildAbs)/child.get(_fluxParentAbs));
+        if (child.get(_fluxParentAbs) == 0.0) {
+            // We can get NaNs in the absolute measure if both parent and child have only negative
+            // biased-corrected fluxes (which we clip to zero).  We can't really recover from this,
+            // so we should set the flag.
+            child.set(_flagGeneral, true);
+        }
     }
 }
 
