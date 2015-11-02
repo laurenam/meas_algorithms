@@ -101,7 +101,7 @@ class SourceMeasurementConfig(pexConfig.Config):
             "the alias for source.getX(), source.getY(), etc.\n"
         )
 
-    doBlendedness = pexConfig.Field(dtype=bool, default=False, optional=False,
+    doBlendedness = pexConfig.Field(dtype=bool, default=False,
                                     doc="Whether to compute blendedness metrics")
 
     blendedness = pexConfig.ConfigField(dtype=algorithmsLib.BlendednessConfig,

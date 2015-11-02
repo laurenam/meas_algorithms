@@ -38,8 +38,32 @@ struct BlendednessControl {
         "Whether to compute HeavyFootprint dot products (the old deblend.blendedness parameter)"
     );
 
+    LSST_CONTROL_FIELD(
+        doFlux, bool,
+        "Whether to compute quantities related to the Gaussian-weighted flux"
+    );
+
+    LSST_CONTROL_FIELD(
+        doShape, bool,
+        "Whether to compute quantities related to the Gaussian-weighted shape"
+    );
+
+    LSST_CONTROL_FIELD(
+        nSigmaWeightMax, double,
+        "Radius factor that sets the maximum extent of the weight function (and hence the flux measurements)"
+    );
+
+    LSST_CONTROL_FIELD(
+        useAbsoluteValue, bool,
+        "If true, take the absolute value of the pixels when computing flux and shape blendedness."
+    );
+
     BlendednessControl() :
-        doOld(true)
+        doOld(true),
+        doFlux(true),
+        doShape(true),
+        nSigmaWeightMax(3.0),
+        useAbsoluteValue(true)
     {}
 
 };
@@ -48,7 +72,7 @@ struct BlendednessControl {
  *  Compute metrics that measure how blended objects are.
  *
  *  Blendedness is initialized once for a given Schema, then run repeatedly
- *  by calls to measureChildPixels and measParentPixels (in any order, possibly
+ *  by calls to measureChildPixels and measureParentPixels (in any order, possibly
  *  with multiple sources interleaved), followed by a call to finish() for each
  *  source.
  */
@@ -68,8 +92,24 @@ public:
     ) const;
 
 private:
+
+    void _measureMoments(
+        afw::image::Image<float> const & image,
+        afw::table::SourceRecord & child,
+        afw::table::Key<double> const & fluxKey,
+        afw::table::Key< afw::table::Moments<double> > const & _shapeKey
+    ) const;
+
     BlendednessControl const _ctrl;
     afw::table::Key<double> _old;
+    afw::table::Key<double> _flux;
+    afw::table::Key<double> _fluxChild;
+    afw::table::Key<double> _fluxParent;
+    afw::table::Key< afw::table::Moments<double> > _shapeChild;
+    afw::table::Key< afw::table::Moments<double> > _shapeParent;
+    afw::table::Key<afw::table::Flag> _flagGeneral;
+    afw::table::Key<afw::table::Flag> _flagNoCentroid;
+    afw::table::Key<afw::table::Flag> _flagNoShape;
 };
 
 }}} // namespace lsst::meas::algorithms
