@@ -89,7 +89,7 @@ class SourceMeasurementConfig(pexConfig.Config):
                  ],
         doc="Algorithms that will be run by default."
         )
-    
+
     centroider = AlgorithmRegistry.filter(CentroidConfig).makeField(
         multi=False, default="centroid.sdss", optional=True,
         doc="Configuration for the initial centroid algorithm used to\n"\
@@ -100,6 +100,12 @@ class SourceMeasurementConfig(pexConfig.Config):
             "This field DOES NOT set which field name will be used to define\n"\
             "the alias for source.getX(), source.getY(), etc.\n"
         )
+
+    doBlendedness = pexConfig.Field(dtype=bool, default=False,
+                                    doc="Whether to compute blendedness metrics")
+
+    blendedness = pexConfig.ConfigField(dtype=algorithmsLib.BlendednessConfig,
+                                        doc="Configuration for blendedness metrics")
 
     doReplaceWithNoise = pexConfig.Field(dtype=bool, default=True, optional=False,
                                          doc='When measuring, replace other detected footprints with noise?')
@@ -170,6 +176,8 @@ class SourceMeasurementTask(pipeBase.Task):
         self.measurer = self.config.makeMeasureSources(schema, algMetadata, isForced=isForced)
         if self.config.doReplaceWithNoise:
             self.makeSubtask('replaceWithNoise')
+        if self.config.doBlendedness:
+            self.blendedness = algorithmsLib.Blendedness(self.config.blendedness.makeControl(), schema)
 
     def preMeasureHook(self, exposure, sources):
         '''A hook, for debugging purposes, that is called at the start of the
@@ -281,6 +289,14 @@ class SourceMeasurementTask(pipeBase.Task):
                     else:
                         self.measurer.applyForced(source, exposure, ref, refWcs, True,
                                                   beginPriority, endPriority)
+                    if self.config.doBlendedness:
+                        self.blendedness.measureChildPixels(exposure.getMaskedImage(), source)
+        # Now we loop over all of the sources one more time to compute the blendedness metrics
+        # on the original image (i.e. with no noise replacement).
+        for source, ref in zip(sources, references):
+            if self.config.doBlendedness:
+                self.blendedness.measureParentPixels(exposure.getMaskedImage(), source)
+
 
     # Alias for backwards compatibility
     run = measure
