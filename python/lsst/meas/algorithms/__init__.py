@@ -36,6 +36,8 @@ from .measureCurveOfGrowth import *
 
 from .version import *
 
+from . import classifiers  # no names, just injected methods and docstrings
+
 import lsst.utils
 
 for name in dict(globals()):

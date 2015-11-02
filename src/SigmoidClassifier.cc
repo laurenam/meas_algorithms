@@ -67,10 +67,13 @@ ndarray::Array<double const,N,N> SigmoidClassifierControl<N>::getCoefficients(
 ) const {
     typename CoefficientMap::const_iterator i = _coefficients.find(name);
     if (i == _coefficients.end()) {
-        throw LSST_EXCEPT(
-            pex::exceptions::NotFoundException,
-            (boost::format("No coefficients specified for filter '%s'") % name).str()
-        );
+        i = _coefficients.find("");
+        if (i == _coefficients.end()) {
+            throw LSST_EXCEPT(
+                pex::exceptions::NotFoundException,
+                (boost::format("No coefficients specified for filter '%s' and no defaults.") % name).str()
+            );
+        }
     }
     return i->second;
 }

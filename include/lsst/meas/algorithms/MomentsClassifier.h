@@ -36,7 +36,7 @@ class MomentsClassifierAlgorithm;
 class MomentsClassifierControl : public SigmoidClassifierControl<3> {
 public:
 
-    MomentsClassifierControl(std::string const & name);
+    MomentsClassifierControl(std::string const & name="classification.moments");
 
     PTR(MomentsClassifierControl) clone() const {
         return boost::static_pointer_cast<MomentsClassifierControl>(_clone());
