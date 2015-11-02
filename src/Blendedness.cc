@@ -193,7 +193,9 @@ void computeMoments(
             float data = pixelIter.image();
             accumulatorRaw(d.getX(), d.getY(), weight, data);
             float variance = pixelIter.variance();
-            float mu = std::max(0.0f, data);
+            float mu = (std::sqrt(variance/(2.0f/boost::math::constants::pi<float>()))*
+                        std::exp(-0.5f*(data*data)/variance)) +
+                0.5f*data*boost::math::erfc(-data/std::sqrt(2.0f*variance));
             float bias = (std::sqrt(2.0f*variance/boost::math::constants::pi<float>())*
                           std::exp(-0.5f*(mu*mu)/variance)) -
                 mu*boost::math::erfc(mu/std::sqrt(2.0f*variance));
