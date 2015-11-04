@@ -176,6 +176,7 @@ class SourceDetectionConfig(pexConfig.Config):
     def setDefaults(self):
         self.footprintBackground.binSize = 64
         self.footprintBackground.algorithm = "AKIMA_SPLINE"
+        self.footprintBackground.useApprox = False
 
 
 class SourceDetectionTask(pipeBase.Task):
